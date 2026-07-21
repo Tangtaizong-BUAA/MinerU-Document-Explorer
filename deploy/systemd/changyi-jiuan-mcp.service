@@ -1,0 +1,32 @@
+[Unit]
+Description=Changyi Jiuan Knowledge MCP (loopback only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=changyi-kb
+Group=changyi-kb
+WorkingDirectory=/opt/changyi-jiuan-mcp/app
+Environment=NODE_ENV=production
+Environment=HOME=/var/lib/changyi-kb
+Environment=CYJ_MCP_PROFILE=project-admin
+Environment=CYJ_KB_ROOT=/var/lib/changyi-kb/data
+Environment=CYJ_PYTHON_BIN=/usr/bin/python3
+EnvironmentFile=-/etc/changyi-jiuan-mcp.env
+ExecStart=/usr/local/bin/node /opt/changyi-jiuan-mcp/app/dist/cli/qmd.js mcp --http --port 8793
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/changyi-kb
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

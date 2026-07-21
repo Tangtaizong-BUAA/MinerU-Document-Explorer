@@ -25,6 +25,16 @@ Codex、Qoder 和 Hermes Agent 均使用此标准形态。需要共享服务时�
 
 项目还提供可随仓库分发的 Agent Skill：[`skills/changyi-jiuan-knowledge-operations/`](../../skills/changyi-jiuan-knowledge-operations/)。将其放入客户端可发现的 skills 目录，或在任务提示中显式要求使用 `$changyi-jiuan-knowledge-operations`。它把“先 brief、再精确检索、工作必须 closeout”的默认循环交给 Agent；MCP Server 仍是唯一的数据与权限裁决者。
 
+## 服务器部署
+
+推荐用 [`deploy/systemd/changyi-jiuan-mcp.service`](../../deploy/systemd/changyi-jiuan-mcp.service) 部署为独立的 `changyi-kb` 用户服务。它使用 Node 22+，只监听 `127.0.0.1:8793`，不改 Nginx；本地客户端通过 SSH 隧道访问：
+
+```bash
+ssh -N -L 8793:127.0.0.1:8793 root@your-server
+```
+
+服务的 MinerU 凭据仅放入服务器 `/etc/changyi-jiuan-mcp.env`（模板见 [`changyi-jiuan-mcp.env.example`](../../deploy/systemd/changyi-jiuan-mcp.env.example)），权限应为 `root:changyi-kb` 和 `0640`。不要使用已暴露在聊天中的旧凭据。
+
 ## 最小验收
 
 1. 客户端完成 MCP capability discovery；
