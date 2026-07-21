@@ -8,7 +8,8 @@ MCP 层不是把数据库所有功能原样暴露给模型，而是提供最小�
 - 每次检索返回的正文量；
 - Agent 误用写工具的概率；
 - 来源引用与后续精读效率；
-- 多种 MCP 客户端的兼容性。
+- Qoder、Hermes Agent、Codex 以及其他标准 MCP 客户端的兼容性；
+- 无人工值守时的幂等、租约、重试和失败安全。
 
 ## 2. Profile 设计
 
@@ -18,15 +19,15 @@ MCP 层不是把数据库所有功能原样暴露给模型，而是提供最小�
 
 ### `project-read`
 
-日常 Agent 默认 profile，只提供项目简报、结构化查找、搜索、目录和局部读取。
+查询子 Agent profile，只提供项目简报、结构化查找、搜索、目录和局部读取。
 
 ### `project-maintain`
 
-在 `project-read` 基础上增加工作项开始、结果回传和候选记忆提交。不能直接批准记忆或批量覆盖正式知识。
+Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` 基础上增加工作项开始、结果回传和候选记忆提交。不能直接接受记忆或批量覆盖正式知识；`kb_finish_work` 会触发服务端自动策略裁决。
 
 ### `project-admin`
 
-增加摄取、修复、审批、重建和敏感配置管理。默认不向普通 Agent 配置。
+供摄取、治理和运维 Agent 使用，增加摄取、隔离修复、重校验、重建和健康检查。该 profile 仍受项目根目录和策略约束，不提供 `force_accept`、原件物理删除或审计清空。
 
 ## 3. 首期外部工具面
 
@@ -76,7 +77,7 @@ MCP 层不是把数据库所有功能原样暴露给模型，而是提供最小�
 - `mode`: `auto/exact/hybrid/semantic`；
 - `top_k`，默认 5，上限 20；
 - `snippet_tokens`，默认 100，上限 250；
-- `include_unreviewed`，默认 false。
+- `include_unverified`，默认 false。
 
 `auto` 路由：
 
@@ -91,7 +92,7 @@ MCP 层不是把数据库所有功能原样暴露给模型，而是提供最小�
 - 标题、类型、定位器；
 - 短摘录；
 - 综合分和检索路径；
-- review/confidentiality 状态；
+- validation/confidentiality 状态；
 - `kb://` resource link。
 
 ### 3.4 `kb_outline`
@@ -117,9 +118,9 @@ MCP 层不是把数据库所有功能原样暴露给模型，而是提供最小�
 
 ### 3.6 `kb_start_work`
 
-用途：创建一次可追踪的 Agent/人工工作会话。
+用途：创建一次可追踪的 Agent 工作会话。
 
-输入：目标、预期输出、验收标准、输入记录和操作者。
+输入：目标、预期输出、验收标准和输入记录。操作者身份由 MCP 会话认证信息在服务端生成，不接受调用方伪造。
 
 输出：`work_id`、当前知识版本、建议 brief URI 和 closeout 要求。
 
@@ -144,21 +145,39 @@ MCP 层不是把数据库所有功能原样暴露给模型，而是提供最小�
 
 - 工作项最终状态；
 - 接受的确定性更新；
-- 创建的候选记忆 ID；
-- 冲突和待审批项；
-- 审计事件 ID。
+- 自动晋升、隔离和拒绝的记忆 ID；
+- 冲突、补证工作项和下一次自动重试时间；
+- validation event、policy trace 和审计事件 ID。
 
 同一 `work_id + result_hash` 重试必须返回同一结果。
 
-### 3.8 `kb_review_memory`
+### 3.8 `kb_ingest`
 
-用途：项目负责人或审批 Agent 审核候选记忆。
+用途：让摄取 Agent 在已配置的数据根目录内执行清单、解析、校验和增量索引。
 
-输入：candidate ID、决定、理由、可选修改和审批主体。
+输入：`source_root_id`、相对路径或 glob、`mode: inventory/ingest/retry`、可选解析策略和幂等键。
 
-决定：`accept/reject/request_changes/supersede`。
+输出：job ID、发现/登记/接受/隔离/失败数量、manifest/parse report 资源和下一步修复任务。
 
-该工具只存在于 `project-admin`，首期不授予普通维护 Agent。
+禁止任意绝对路径、未授权云外发和原地修改原件。
+
+### 3.9 `kb_reconcile_memory`
+
+用途：治理 Agent 为 `quarantined/disputed` 记忆补充证据、限定作用域、提交取代关系或请求重新校验。
+
+输入：memory ID、`action: add_evidence/narrow_scope/propose_supersession/revalidate`、证据引用、理由和幂等键。
+
+输出：策略引擎重新计算后的状态、policy trace、冲突关系和后续补证工作项。
+
+该工具不能指定最终接受结果；不存在 `force_accept`。
+
+### 3.10 `kb_maintain`
+
+用途：运维 Agent 执行健康检查、隔离队列重试、派生索引重建、备份和恢复验证。
+
+输入：`action: health/retry_quarantined/rebuild_derived/backup/verify_restore`、scope、dry-run 和幂等键。
+
+危险动作默认使用 dry-run；正式执行仍必须满足服务端策略。原件物理删除、accepted 历史删除和审计清空不属于工具能力。
 
 ## 4. Resource URI
 
@@ -243,5 +262,23 @@ kb://memory/<memory-id>
 - 每次写调用记录主体、输入摘要、结果、错误和 trace ID；
 - 审计日志不保存 API key 和不必要的完整正文；
 - 工具 annotation 只是提示，服务端必须独立执行真实权限校验。
+
+## 10. 三客户端互操作契约
+
+首要兼容矩阵：
+
+| 客户端 | 默认传输 | 默认 profile | 必测闭环 |
+|---|---|---|---|
+| Qoder | stdio | `project-maintain` | capability discovery、资源读取、工作回传、自动 closeout |
+| Hermes Agent | stdio；共享服务时 localhost HTTP | `project-maintain` | 结构化输出、并发幂等、失败重试、自动 closeout |
+| Codex | stdio | `project-maintain` | tool/resource 调用、最小上下文、工作回传、自动 closeout |
+
+治理/摄取/运维任务由编排器以独立 `project-admin` 服务身份启动，不因客户端品牌自动获得管理能力。每个客户端必须同时支持：
+
+- MCP 初始化与 capability discovery；
+- 文本摘要兜底、`structuredContent` 和 resource link；
+- trace ID、幂等键和可重试错误；
+- 任务结束前验证 `kb_finish_work` 已成功；
+- 遇到 `quarantined/disputed` 时创建治理工作项，而不是请求人工审批。
 
 机器可读草案见 [specs/mcp-surface.v0.1.yaml](specs/mcp-surface.v0.1.yaml)。

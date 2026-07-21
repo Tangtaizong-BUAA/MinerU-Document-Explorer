@@ -84,3 +84,13 @@
 2. 是否包含涉密、个人信息或不可上传的材料；
 3. 首期主要调用端是 Codex、Claude Desktop、OpenClaw，还是其他 MCP 客户端；
 4. 第一阶段是否继续采用“单维护者 + 本地优先 + 记忆人工审批”的默认方案。
+
+## 7. 基线后的已确认决策
+
+本报告完成后，用户已确认：
+
+- 主要 MCP 客户端为 Qoder、Hermes Agent 和 Codex；
+- 系统正常运行全托管于 Agent，不设置人工记忆审批或人工运维队列；
+- 历史资料暂不提供，先使用合成 fixture 实现和验证垂直切片。
+
+这些决定不改变本报告中的上游测试事实，但取代第 6 节中相应的待确认项。当前设计以 [ADR-0004](../adr/0004-agent-managed-autonomy.md) 和 [决策记录](../09-decisions-and-open-questions.md) 为准。

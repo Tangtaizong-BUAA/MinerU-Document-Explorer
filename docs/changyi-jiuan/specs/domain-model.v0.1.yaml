@@ -1,5 +1,5 @@
 spec: changyi-jiuan-domain-model
-version: 0.1.0
+version: 0.1.1
 status: draft
 
 id_format: "<type>:<project-key>:<ulid-or-slug>"
@@ -10,9 +10,10 @@ enums:
     - internal
     - restricted
     - secret
-  review_status:
-    - unreviewed
+  validation_status:
+    - unverified
     - verified
+    - quarantined
     - rejected
   derivation:
     - human
@@ -44,9 +45,9 @@ derived_fields:
     values: [human, agent, parser, import]
     required: true
   confidence: { type: number, minimum: 0, maximum: 1, required: true }
-  review_status:
+  validation_status:
     type: enum
-    values: [unreviewed, verified, rejected]
+    values: [unverified, verified, quarantined, rejected]
     required: true
   supersedes: { type: id, required: false }
 
@@ -60,7 +61,7 @@ record_types:
     required: [key, objective, owners]
 
   work_item:
-    statuses: [planned, in_progress, blocked, completed, cancelled]
+    statuses: [planned, in_progress, awaiting_closeout, blocked, completed, cancelled]
     required: [objective, workstream_id, acceptance_criteria, owners]
     rules:
       - "status=completed requires closeout_ref or deliverable_refs"
@@ -92,13 +93,13 @@ record_types:
     required: [display_name]
 
   artifact:
-    statuses: [registered, queued, parsing, parsed, review_required, accepted, indexed, failed, stale]
+    statuses: [registered, queued, parsing, parsed, validating, quarantined, accepted, indexed, failed, stale]
     required: [mime_type, size_bytes, sha256, original_relative_path, acquired_at]
     rules:
       - "sha256 is immutable for an artifact version"
 
   evidence:
-    statuses: [proposed, verified, rejected, stale]
+    statuses: [proposed, verified, quarantined, rejected, stale]
     required: [artifact_id, locator, content_fingerprint]
 
   claim:
@@ -129,12 +130,30 @@ record_types:
     required: [severity, owner, description]
 
   memory:
-    statuses: [candidate, validating, needs_review, accepted, rejected, disputed, superseded]
+    statuses: [candidate, validating, quarantined, accepted, rejected, disputed, superseded]
     kinds: [fact, decision, procedure, lesson, constraint, preference, open_question]
     required: [kind, statement, scope, source_work_id]
     rules:
-      - "status=accepted requires evidence_refs and review_event_ref"
-      - "kind=preference requires human approval"
+      - "status=accepted requires evidence_refs and validation_event_ref"
+      - "kind=preference requires an authenticated user directive source"
+      - "policy engine failure must not transition memory to accepted"
+
+  validation_event:
+    statuses: [completed, failed]
+    decisions: [accepted, quarantined, rejected, disputed, superseded]
+    required:
+      - subject_ref
+      - policy_id
+      - policy_version
+      - input_hash
+      - decision
+      - reason_codes
+      - actor
+      - trace_id
+      - evaluated_at
+    rules:
+      - "validation events are append-only and immutable"
+      - "revalidation creates a new event"
 
 relations:
   part_of: { from: "*", to: [project, workstream] }
@@ -148,3 +167,4 @@ relations:
   implements: { from: [work_item, deliverable], to: decision }
   supersedes: { from: [claim, decision, memory], to: [claim, decision, memory] }
   blocks: { from: [issue, work_item], to: [work_item, deliverable] }
+  validates: { from: validation_event, to: [artifact, evidence, claim, decision, memory] }

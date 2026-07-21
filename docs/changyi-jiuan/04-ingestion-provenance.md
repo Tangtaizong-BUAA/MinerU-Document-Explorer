@@ -33,6 +33,7 @@ knowledge-data/
 ├── memory/
 │   ├── inbox/
 │   ├── accepted/
+│   ├── quarantined/
 │   ├── rejected/
 │   └── superseded/
 └── views/                       # 自动生成视图
@@ -70,7 +71,7 @@ discovered
   → parsing
   → parsed
   → validating
-  → review_required | accepted
+  → quarantined | accepted
   → indexed
 
 任何阶段都可能 → failed
@@ -84,7 +85,7 @@ discovered
 - `parsing`：解析作业执行中；
 - `parsed`：产物已生成；
 - `validating`：检查结构、链接、页码和资源；
-- `review_required`：低质量、敏感或复杂结果待人工复核；
+- `quarantined`：低质量、敏感或复杂结果未通过自动策略；治理 Agent 将补证、换解析器、缩小范围或标记不可解析；
 - `accepted`：规范化结果可进入正式检索；
 - `indexed`：相应索引已增量更新；
 - `failed`：保留错误类别、日志摘要和重试信息。
@@ -107,9 +108,9 @@ discovered
 优先级由部署模式决定：
 
 1. 本地 MinerU：敏感资料和离线场景；
-2. MinerU Cloud：项目负责人明确允许且资料适合外发时；
+2. MinerU Cloud：仅在数据外发策略已显式启用且资料分类允许时；
 3. PyMuPDF 等基础后端：文本型 PDF 快速路径或降级；
-4. 人工处理：解析失败、特殊表格、手写内容和关键图示。
+4. Agent 修复路径：解析失败、特殊表格、手写内容和关键图示进入隔离队列，由多解析器、视觉模型或结构化规则补救。
 
 每个解析结果必须记录：
 
@@ -134,7 +135,7 @@ mime_type: image/jpeg
 sha256: "..."
 source_refs: [artifact:cyj:report-001]
 locator: "page:12, figure:2"
-review_status: unreviewed
+validation_status: unverified
 ---
 
 # 图 2：设备布置
@@ -147,7 +148,7 @@ review_status: unreviewed
 
 ## 描述
 
-由解析模型生成，尚待人工复核。
+由解析模型生成，尚未通过证据质量策略。
 
 ## 关联
 
@@ -183,13 +184,15 @@ review_status: unreviewed
 - 字符异常、重复页、空白页和 OCR 低置信度；
 - manifest、parse report 和 artifact 记录一致。
 
-人工复核优先队列：
+治理 Agent 优先处理队列：
 
 - 形成正式结论所依赖的关键证据；
 - 人物身份、联系方式和敏感内容；
 - 手写、模糊扫描、复杂公式和合并单元格；
 - 模型生成的图片描述；
 - 公开发布前的引用和版权信息。
+
+治理 Agent 不能仅凭第二次语言模型自评把结果设为 accepted；必须增加可机读证据，例如交叉解析一致性、源位置回读、结构计数、规则校验或独立模型一致性，并保存 validation event。
 
 ## 10. 失败与恢复
 
@@ -206,6 +209,6 @@ review_status: unreviewed
 1. 原始文件和 manifest；
 2. 规范化 Markdown、assets 和领域记录；
 3. Git 仓库与 Schema；
-4. 审计日志和审批记录。
+4. 审计日志、策略版本和 validation event。
 
 SQLite 索引可以备份以加快恢复，但恢复验收必须包含“从文件全量重建成功”。

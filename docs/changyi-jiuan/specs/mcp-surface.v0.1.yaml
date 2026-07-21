@@ -1,22 +1,31 @@
 spec: changyi-jiuan-mcp-surface
-version: 0.1.0
+version: 0.1.1
 status: draft
+
+primary_clients:
+  - name: Qoder
+    default_transport: stdio
+  - name: Hermes Agent
+    default_transport: stdio
+    optional_transport: localhost_http
+  - name: Codex
+    default_transport: stdio
 
 profiles:
   upstream-full:
     purpose: upstream compatibility and development
     tools: upstream_all
   project-read:
-    purpose: default agent knowledge access
+    purpose: query subagent knowledge access
     tools: [kb_brief, kb_lookup, kb_search, kb_outline, kb_read]
   project-maintain:
-    purpose: controlled work lifecycle and candidate submission
+    purpose: default orchestrator work lifecycle and automatic policy submission
     extends: project-read
     tools: [kb_start_work, kb_finish_work]
   project-admin:
-    purpose: ingestion, approval, rebuild, and administration
+    purpose: agent-managed ingestion, reconciliation, rebuild, and operations
     extends: project-maintain
-    tools: [kb_review_memory]
+    tools: [kb_ingest, kb_reconcile_memory, kb_maintain]
 
 resource_templates:
   - "kb://project/{project_id}/brief"
@@ -53,10 +62,10 @@ tools:
     hard_snippet_tokens: 250
     modes: [auto, exact, hybrid, semantic]
     required_input: [query]
-    optional_input: [filters, mode, top_k, snippet_tokens, include_unreviewed]
+    optional_input: [filters, mode, top_k, snippet_tokens, include_unverified]
     defaults:
       mode: auto
-      include_unreviewed: false
+      include_unverified: false
 
   kb_outline:
     profile: project-read
@@ -81,7 +90,7 @@ tools:
   kb_start_work:
     profile: project-maintain
     read_only: false
-    required_input: [objective, expected_outputs, acceptance_criteria, actor]
+    required_input: [objective, expected_outputs, acceptance_criteria]
     optional_input: [input_refs]
     output: [work_id, knowledge_version, brief_uri, closeout_requirements]
 
@@ -94,13 +103,52 @@ tools:
     required_input: [work_id, outcome, summary, result_hash]
     optional_input: [artifacts, claims, decisions, lessons, unresolved, evidence_refs]
     outcomes: [completed, partial, failed, cancelled]
+    output:
+      - work_status
+      - accepted_updates
+      - promoted_memory_ids
+      - quarantined_memory_ids
+      - rejected_memory_ids
+      - remediation_work_ids
+      - validation_event_ids
+      - policy_trace_id
+      - audit_event_id
 
-  kb_review_memory:
+  kb_ingest:
     profile: project-admin
     read_only: false
-    required_input: [candidate_id, decision, rationale, reviewer]
-    optional_input: [edited_statement, supersedes]
-    decisions: [accept, reject, request_changes, supersede]
+    idempotency_key: "source_root_id + request_hash"
+    required_input: [source_root_id, mode, request_hash]
+    optional_input: [relative_paths, glob, parser_policy]
+    modes: [inventory, ingest, retry]
+    rules:
+      - "absolute paths are forbidden"
+      - "source_root_id must be preconfigured"
+      - "cloud parsing requires an enabled egress policy"
+
+  kb_reconcile_memory:
+    profile: project-admin
+    read_only: false
+    idempotency_key: "memory_id + request_hash"
+    required_input: [memory_id, action, rationale, request_hash]
+    optional_input: [evidence_refs, narrowed_scope, proposed_supersedes]
+    actions: [add_evidence, narrow_scope, propose_supersession, revalidate]
+    rules:
+      - "the caller cannot choose the final validation status"
+      - "force_accept is forbidden"
+
+  kb_maintain:
+    profile: project-admin
+    read_only: false
+    idempotency_key: "action + scope + request_hash"
+    required_input: [action, request_hash]
+    optional_input: [scope, dry_run]
+    actions: [health, retry_quarantined, rebuild_derived, backup, verify_restore]
+    defaults:
+      dry_run: true
+    rules:
+      - "physical deletion of originals is forbidden"
+      - "deletion of accepted history and audit events is forbidden"
 
 response_contract:
   text_summary: required
@@ -113,6 +161,15 @@ response_contract:
 security_defaults:
   http_bind: 127.0.0.1
   remote_http_enabled: false
-  unreviewed_visible_in_default_search: false
+  unverified_visible_in_default_search: false
   candidate_visible_in_default_search: false
   write_tools_visible_to_read_profile: false
+  force_accept_available: false
+  physical_original_delete_available: false
+
+autonomy_contract:
+  human_approval_in_normal_path: false
+  finish_work_required: true
+  policy_decision_required_for_promotion: true
+  unresolved_action: quarantine_and_create_remediation_work
+  policy_failure_action: fail_closed

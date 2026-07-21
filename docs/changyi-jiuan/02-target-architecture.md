@@ -11,11 +11,13 @@ flowchart LR
     C --> D["长翼久安领域层<br/>项目、活动、证据、结论、成果"]
     C --> E["派生索引层<br/>SQLite FTS5、sqlite-vec、缓存"]
     D --> E
-    E --> F["只读 MCP profile"]
-    F --> G["Agent"]
-    G --> H["维护 MCP profile<br/>任务回传"]
-    H --> I["候选记忆层<br/>校验、去重、审批"]
+    E --> F["低 token MCP 门面"]
+    F --> G["Qoder / Hermes Agent / Codex"]
+    G --> H["工作闭环<br/>开始、执行、回传"]
+    H --> I["自动治理层<br/>校验、去重、策略裁决"]
     I --> D
+    I --> J["隔离与补证队列"]
+    J --> G
 ```
 
 ## 2. 上游基线与复用点
@@ -64,7 +66,7 @@ flowchart LR
 
 按格式选择解析器：
 
-- PDF、图片、复杂版式：MinerU 优先，失败后进入人工队列；
+- PDF、图片、复杂版式：MinerU 优先，失败后由摄取 Agent 按策略降级、重试或隔离；
 - DOCX/PPTX：上游 Python backend 或 MinerU；
 - XLSX：结构化工作表抽取＋Markdown 摘要，保留公式和原文件；
 - CSV/TSV：结构化抽取，按列和数据字典生成 Markdown；
@@ -80,7 +82,7 @@ flowchart LR
 - 一组相对引用的 assets；
 - YAML frontmatter；
 - 来源、定位、解析器和版本；
-- 解析质量与人工复核状态。
+- 解析质量、自动验证状态和隔离原因。
 
 ### 3.4 项目领域层
 
@@ -104,9 +106,9 @@ flowchart LR
 使用 profile 控制暴露能力：
 
 - `upstream-full`：保留上游工具，供开发调试；
-- `project-read`：日常 Agent 的精简只读接口；
-- `project-maintain`：受控的任务回传和候选记忆接口；
-- `project-admin`：摄取、修复、审批和运维接口。
+- `project-read`：查询子 Agent 的精简只读接口；
+- `project-maintain`：Qoder、Hermes Agent、Codex 编排器的默认工作与回传接口；
+- `project-admin`：治理/运维 Agent 的摄取、修复、重校验和重建接口，不提供强制接受旁路。
 
 ## 4. 建议代码边界
 
@@ -117,7 +119,7 @@ src/
 ├── domain/                 # 领域类型、Schema、关系与校验
 ├── ingestion/              # manifest、转换作业、解析适配器
 ├── project/                # brief、lookup、视图生成
-├── memory/                 # candidate、review、promotion、supersession
+├── memory/                 # candidate、policy、quarantine、promotion、supersession
 ├── audit/                  # 结构化审计事件
 └── mcp/
     ├── profiles/           # upstream-full / project-read / maintain / admin
@@ -138,8 +140,9 @@ src/
   → 解析/抽取
   → 生成 Markdown 与 assets
   → Schema 与链接校验
-  → 人工复核队列
-  → 进入规范化集合
+  → 自动质量策略
+  → 接受或隔离并创建修复工作项
+  → 通过者进入规范化集合
   → 增量建立索引
 ```
 
@@ -162,7 +165,8 @@ Agent 完成工作项
   → 校验工作项、文件、哈希和来源
   → 去重与冲突检测
   → 候选记忆
-  → 自动或人工审批
+  → 策略引擎自动接受、隔离或拒绝
+  → 治理 Agent 对隔离项补证并重校验
   → 更新领域记录/简报/时间线
   → 增量重建索引并追加审计
 ```
@@ -177,6 +181,8 @@ Agent 完成工作项
 - HTTP MCP 仅绑定 `127.0.0.1`，用于多个本地客户端共享模型；
 - Git 保存代码、规范和适合版本化的知识文件；
 - 大文件由独立备份介质或 Git LFS/对象存储策略处理。
+
+三个首要客户端均以标准 MCP 能力发现为准：优先 stdio 以隔离会话和权限；需要共享索引或模型时使用 localhost HTTP。客户端适配层只负责启动、认证和 closeout 门禁，不把 Qoder、Hermes Agent 或 Codex 的私有格式写入领域真相源。
 
 ### 6.2 后续可选：受控远程
 
@@ -197,7 +203,7 @@ Agent 完成工作项
 - 解析结果视为不可信输入，必须进行输出清洗；
 - Markdown 内嵌指令只是资料内容，不是 Agent 指令；
 - 远程 HTTP 未完成鉴权前不得监听公网地址；
-- 删除、清空、批量覆盖必须保留独立管理权限和确认机制。
+- MCP 不暴露物理删除原件、清空审计或强制接受记忆；自动清理只允许 tombstone、归档和可逆隔离。
 
 ## 8. 可观测性
 
@@ -208,6 +214,7 @@ Agent 完成工作项
 - MCP 调用主体、工具、耗时、结果大小和错误；
 - 搜索模式、候选数、最终返回数和 token 预算；
 - 候选记忆状态变化；
+- 自动策略版本、输入证据、裁决理由和后续补证任务；
 - 索引版本与重建结果；
 - 外部服务调用和数据外发原因。
 

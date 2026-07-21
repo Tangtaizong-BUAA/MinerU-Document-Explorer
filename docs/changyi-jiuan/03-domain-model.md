@@ -41,7 +41,7 @@
 
 - `derivation`: `human/agent/parser/import`；
 - `confidence`: 0～1，仅表示该记录自身的可信度；
-- `review_status`: `unreviewed/verified/rejected`；
+- `validation_status`: `unverified/verified/quarantined/rejected`；
 - `supersedes`: 被本记录取代的记录 ID，可为空。
 
 ## 3. 稳定 ID 规则
@@ -62,7 +62,7 @@ decision:cyj:retrieval-profile-001
 规则：
 
 - ID 不使用可变的绝对路径；
-- 人工创建的稳定概念可以使用可读 slug；
+- 人工或 Agent 明确维护的稳定概念可以使用可读 slug；
 - 高频、批量和来源派生记录使用 ULID；
 - 内容哈希作为版本与判重依据，但不直接替代业务 ID；
 - ID 重定向和 `supersedes` 显式保留，不复用旧 ID 表达新事实。
@@ -103,7 +103,7 @@ Agent 和人执行工作的统一任务单：
 - 所属工作流、负责人和协作者；
 - 输入资料和依赖；
 - 开始、截止和完成时间；
-- `planned/in_progress/blocked/completed/cancelled` 状态；
+- `planned/in_progress/awaiting_closeout/blocked/completed/cancelled` 状态；
 - 验收标准；
 - closeout 和成果引用。
 
@@ -123,7 +123,7 @@ Agent 和人执行工作的统一任务单：
 用于工作关系、参与者、合作单位和实践地点：
 
 - 正式名称、别名和角色；
-- 联系方式默认不进入供普通 Agent 检索的公开摘要；
+- 联系方式默认不进入未获相应 capability 的 Agent 检索摘要；
 - 与活动、工作流和成果建立显式关系；
 - 对个人评价必须区分事实、观察和推断；
 - 敏感身份和联系方式遵循最小可见原则。
@@ -162,7 +162,7 @@ Agent 和人执行工作的统一任务单：
 - 支持证据与反证；
 - 置信度和适用范围；
 - 有效时间；
-- 审核主体。
+- validation event 与策略版本。
 
 回答时不得把 `hypothesis` 或 `inference` 伪装成已验证事实。
 
@@ -205,10 +205,24 @@ Agent 和人执行工作的统一任务单：
 - `procedure`：经过验证的操作方法；
 - `lesson`：有证据的成功或失败经验；
 - `constraint`：持续约束；
-- `preference`：经项目负责人确认的偏好；
+- `preference`：来自可认证用户指令，或经长期证据策略验证的稳定偏好；
 - `open_question`：需要后续追踪的问题。
 
 完整聊天、临时草稿和未经验证的推测不直接成为正式记忆。
+
+### 4.13 `validation_event`
+
+表示策略引擎对 artifact、evidence、claim、decision 或 memory 的一次不可变裁决：
+
+- 被校验对象和输入内容哈希；
+- policy ID、版本和规则集合哈希；
+- `accepted/quarantined/rejected/disputed/superseded` 决定；
+- 机器可读 reason codes；
+- 使用的 evidence/source 引用；
+- 执行 Agent、MCP session、trace ID 和时间；
+- 若隔离，关联 remediation work ID。
+
+validation event 只追加不覆盖。重新校验生成新事件，当前状态由最新有效事件投影。
 
 ## 5. 关键关系
 
@@ -225,6 +239,7 @@ Agent 和人执行工作的统一任务单：
 | `implements` | work_item/deliverable → decision | 落实决定 |
 | `supersedes` | claim/decision/memory → 同类型记录 | 取代但保留历史 |
 | `blocks` | issue/work_item → work_item/milestone | 阻塞 |
+| `validates` | validation_event → artifact/evidence/claim/decision/memory | 自动策略裁决 |
 
 关系必须指向 ID。人类可读标题和 `[[wikilink]]` 是展示层，不是唯一引用键。
 
@@ -246,7 +261,7 @@ Agent 和人执行工作的统一任务单：
 - 决策日志；
 - 成果清单；
 - 风险与问题看板；
-- 记忆审批队列。
+- 记忆隔离、冲突与自动补证队列。
 
 ### 6.3 SQLite 物化
 
@@ -259,7 +274,8 @@ Agent 和人执行工作的统一任务单：
 - `work_item: completed` 必须有 closeout 或成果引用；
 - `artifact` 必须有哈希和来源状态；
 - `evidence` 必须有精确定位器；
-- `memory: accepted` 必须有 review 事件；
+- `memory: accepted` 必须有 evidence 和 validation event；
+- validation event 必须包含 policy 版本、输入哈希、reason codes 和 trace ID；
 - `superseded` 记录必须指向替代记录；
 - 关系目标不存在时报告 broken link，不自动造事实；
 - 保密级别不能因派生或摘要而自动降低。
