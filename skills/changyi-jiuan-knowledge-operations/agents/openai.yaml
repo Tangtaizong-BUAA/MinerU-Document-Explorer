@@ -1,0 +1,4 @@
+interface:
+  display_name: "Changyi Jiuan Knowledge Operations"
+  short_description: "Run evidence-grounded project knowledge operations"
+  default_prompt: "Use $changyi-jiuan-knowledge-operations to operate this project knowledge base safely."

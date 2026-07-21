@@ -39,7 +39,11 @@ export function callPythonScript(
 ): Promise<unknown> {
   const scriptPath = join(__dirname, "python", scriptName);
   return new Promise((resolve, reject) => {
-    const child = spawn("python3", [scriptPath, ...args], {
+    // A deployment may have multiple Python installations.  Keep the default
+    // compatible with QMD, while allowing the project operator to pin the
+    // interpreter that contains mineru-open-sdk without altering PATH.
+    const pythonBin = process.env.CYJ_PYTHON_BIN || "python3";
+    const child = spawn(pythonBin, [scriptPath, ...args], {
       env: env ? { ...process.env, ...env } : undefined,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -69,7 +73,7 @@ export function callPythonScript(
     });
 
     child.on("error", (err) => {
-      reject(new Error(`Failed to spawn python3: ${err.message}`));
+      reject(new Error(`Failed to spawn ${pythonBin}: ${err.message}`));
     });
 
     child.on("close", (code) => {

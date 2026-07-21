@@ -49,7 +49,7 @@ def main():
     try:
         from mineru import MinerU
     except ImportError:
-        print(json.dumps({"error": "mineru-open-sdk not installed. Run: pip install mineru-open-sdk"}))
+        print(json.dumps({"error": "mineru-open-sdk is unavailable or shadowed by a different mineru package. Install it with: pip install mineru-open-sdk"}))
         sys.exit(1)
 
     try:

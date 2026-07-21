@@ -19,7 +19,11 @@
 }
 ```
 
+只有 ingestion/governance 的 `project-admin` 连接需要 MinerU 环境：将 `MINERU_API_KEY` 注入其运行环境，安装 `mineru-open-sdk`；若它不在默认 `python3` 中，再额外设置 `CYJ_PYTHON_BIN` 指向该解释器。上述凭据与绝对路径均不得提交到仓库。
+
 Codex、Qoder 和 Hermes Agent 均使用此标准形态。需要共享服务时，Hermes 可启动 `qmd mcp --http --port 8181`，仅绑定 localhost；项目 profile 的旧 `/query` 与 `/search` REST 接口被服务器拒绝，所有工作走 `/mcp`。
+
+项目还提供可随仓库分发的 Agent Skill：[`skills/changyi-jiuan-knowledge-operations/`](../../skills/changyi-jiuan-knowledge-operations/)。将其放入客户端可发现的 skills 目录，或在任务提示中显式要求使用 `$changyi-jiuan-knowledge-operations`。它把“先 brief、再精确检索、工作必须 closeout”的默认循环交给 Agent；MCP Server 仍是唯一的数据与权限裁决者。
 
 ## 最小验收
 
