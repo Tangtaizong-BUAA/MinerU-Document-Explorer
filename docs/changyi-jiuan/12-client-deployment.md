@@ -35,6 +35,16 @@ ssh -N -L 8793:127.0.0.1:8793 root@your-server
 
 服务的 MinerU 凭据仅放入服务器 `/etc/changyi-jiuan-mcp.env`（模板见 [`changyi-jiuan-mcp.env.example`](../../deploy/systemd/changyi-jiuan-mcp.env.example)），权限应为 `root:changyi-kb` 和 `0640`。不要使用已暴露在聊天中的旧凭据。
 
+### 内部共享 HTTPS 入口
+
+服务器可将 MCP 以 `https://argonai.cn/cyj/mcp` 提供给内部人员的 Agent。它仍由 loopback 服务承载，Nginx 只代理此精确路径；每个客户端必须在请求中携带同一份私有环境变量：
+
+```text
+Authorization: Bearer $CYJ_MCP_BEARER_TOKEN
+```
+
+`CYJ_MCP_BEARER_TOKEN` 只保存在服务器 `/etc/changyi-jiuan-mcp.env` 与受信任客户端的本地环境中。不要把它粘贴进 URL、MCP JSON 或 Git。无 Token 请求必须返回 `401`；带 Token 的标准 MCP `initialize` 必须返回 `200`。
+
 ## 最小验收
 
 1. 客户端完成 MCP capability discovery；
