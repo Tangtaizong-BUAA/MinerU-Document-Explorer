@@ -1,0 +1,150 @@
+spec: changyi-jiuan-domain-model
+version: 0.1.0
+status: draft
+
+id_format: "<type>:<project-key>:<ulid-or-slug>"
+
+enums:
+  confidentiality:
+    - public
+    - internal
+    - restricted
+    - secret
+  review_status:
+    - unreviewed
+    - verified
+    - rejected
+  derivation:
+    - human
+    - agent
+    - parser
+    - import
+
+common_fields:
+  id: { type: string, required: true, immutable: true }
+  type: { type: string, required: true }
+  title: { type: string, required: true }
+  status: { type: string, required: true }
+  project_id: { type: id, required: true, target: project }
+  created_at: { type: datetime, required: true }
+  updated_at: { type: datetime, required: true }
+  created_by: { type: actor, required: true }
+  source_refs: { type: array, items: id, default: [] }
+  tags: { type: array, items: string, default: [] }
+  confidentiality:
+    type: enum
+    values: [public, internal, restricted, secret]
+    required: true
+    default: internal
+  schema_version: { type: integer, required: true }
+
+derived_fields:
+  derivation:
+    type: enum
+    values: [human, agent, parser, import]
+    required: true
+  confidence: { type: number, minimum: 0, maximum: 1, required: true }
+  review_status:
+    type: enum
+    values: [unreviewed, verified, rejected]
+    required: true
+  supersedes: { type: id, required: false }
+
+record_types:
+  project:
+    statuses: [planned, active, paused, completed, archived]
+    required: [mission, start_date, owners, current_phase]
+
+  workstream:
+    statuses: [planned, active, paused, completed, archived]
+    required: [key, objective, owners]
+
+  work_item:
+    statuses: [planned, in_progress, blocked, completed, cancelled]
+    required: [objective, workstream_id, acceptance_criteria, owners]
+    rules:
+      - "status=completed requires closeout_ref or deliverable_refs"
+
+  activity:
+    statuses: [planned, active, completed, cancelled]
+    kinds:
+      - experiment
+      - interview
+      - meeting
+      - field_visit
+      - observation
+      - event
+      - survey
+      - publication
+      - other
+    required: [kind, occurred_at]
+
+  person:
+    statuses: [active, inactive, archived]
+    required: [display_name]
+
+  organization:
+    statuses: [active, inactive, archived]
+    required: [display_name]
+
+  location:
+    statuses: [active, inactive, archived]
+    required: [display_name]
+
+  artifact:
+    statuses: [registered, queued, parsing, parsed, review_required, accepted, indexed, failed, stale]
+    required: [mime_type, size_bytes, sha256, original_relative_path, acquired_at]
+    rules:
+      - "sha256 is immutable for an artifact version"
+
+  evidence:
+    statuses: [proposed, verified, rejected, stale]
+    required: [artifact_id, locator, content_fingerprint]
+
+  claim:
+    statuses: [proposed, supported, disputed, rejected, superseded]
+    kinds: [fact, observation, inference, hypothesis, recommendation]
+    required: [kind, statement]
+    rules:
+      - "status=supported requires at least one valid evidence_ref"
+      - "kind=hypothesis must never render as verified fact"
+
+  decision:
+    statuses: [proposed, accepted, rejected, superseded]
+    required: [question, outcome, decided_by, decided_at, rationale]
+    rules:
+      - "status=accepted requires rationale and source_refs"
+
+  deliverable:
+    statuses: [planned, draft, review, accepted, published, archived]
+    kinds: [paper, report, dataset, software, video, poster, presentation, other]
+    required: [kind, version, artifact_refs]
+
+  risk:
+    statuses: [open, monitoring, mitigated, occurred, closed]
+    required: [probability, impact, owner, mitigation]
+
+  issue:
+    statuses: [open, in_progress, blocked, resolved, closed]
+    required: [severity, owner, description]
+
+  memory:
+    statuses: [candidate, validating, needs_review, accepted, rejected, disputed, superseded]
+    kinds: [fact, decision, procedure, lesson, constraint, preference, open_question]
+    required: [kind, statement, scope, source_work_id]
+    rules:
+      - "status=accepted requires evidence_refs and review_event_ref"
+      - "kind=preference requires human approval"
+
+relations:
+  part_of: { from: "*", to: [project, workstream] }
+  performed_by: { from: [activity, work_item], to: [person, organization] }
+  occurred_at: { from: activity, to: location }
+  produced: { from: [activity, work_item], to: [artifact, deliverable] }
+  derived_from: { from: [artifact, evidence, memory], to: "*" }
+  supports: { from: evidence, to: claim }
+  contradicts: { from: evidence, to: claim }
+  motivates: { from: [claim, risk], to: decision }
+  implements: { from: [work_item, deliverable], to: decision }
+  supersedes: { from: [claim, decision, memory], to: [claim, decision, memory] }
+  blocks: { from: [issue, work_item], to: [work_item, deliverable] }

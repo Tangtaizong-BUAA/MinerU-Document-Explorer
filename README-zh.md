@@ -26,6 +26,9 @@
 
 ---
 
+> [!NOTE]
+> 此 fork 正在进行“长翼久安”科研＋社会实践项目知识库的定向改造。项目章程、架构、领域模型、低 token MCP、记忆闭环和验收计划见 [docs/changyi-jiuan/](docs/changyi-jiuan/README.md)。上游通用能力说明仍保留如下。
+
 ## 🤔 为什么选择 MinerU Document Explorer？
 
 MinerU Document Explorer 为你的 Agent 提供三组工具套件 — **检索、精读、摄取** — 构成从索引到输出的完整知识闭环：

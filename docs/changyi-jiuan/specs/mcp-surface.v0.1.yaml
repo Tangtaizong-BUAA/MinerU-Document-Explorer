@@ -1,0 +1,118 @@
+spec: changyi-jiuan-mcp-surface
+version: 0.1.0
+status: draft
+
+profiles:
+  upstream-full:
+    purpose: upstream compatibility and development
+    tools: upstream_all
+  project-read:
+    purpose: default agent knowledge access
+    tools: [kb_brief, kb_lookup, kb_search, kb_outline, kb_read]
+  project-maintain:
+    purpose: controlled work lifecycle and candidate submission
+    extends: project-read
+    tools: [kb_start_work, kb_finish_work]
+  project-admin:
+    purpose: ingestion, approval, rebuild, and administration
+    extends: project-maintain
+    tools: [kb_review_memory]
+
+resource_templates:
+  - "kb://project/{project_id}/brief"
+  - "kb://record/{record_id}"
+  - "kb://artifact/{artifact_id}"
+  - "kb://artifact/{artifact_id}/page/{page}"
+  - "kb://evidence/{evidence_id}"
+  - "kb://work/{work_id}"
+  - "kb://memory/{memory_id}"
+
+tools:
+  kb_brief:
+    profile: project-read
+    read_only: true
+    default_budget_tokens: 600
+    hard_limit_tokens: 1200
+    required_input: [project_id]
+    output: [brief_version, generated_at, sections, source_links]
+
+  kb_lookup:
+    profile: project-read
+    read_only: true
+    default_limit: 20
+    hard_limit: 100
+    required_input: [entity_type]
+    optional_input: [filters, fields, limit, cursor]
+
+  kb_search:
+    profile: project-read
+    read_only: true
+    default_top_k: 5
+    hard_top_k: 20
+    default_snippet_tokens: 100
+    hard_snippet_tokens: 250
+    modes: [auto, exact, hybrid, semantic]
+    required_input: [query]
+    optional_input: [filters, mode, top_k, snippet_tokens, include_unreviewed]
+    defaults:
+      mode: auto
+      include_unreviewed: false
+
+  kb_outline:
+    profile: project-read
+    read_only: true
+    default_budget_tokens: 300
+    hard_limit_tokens: 800
+    required_input: [resource_id]
+    optional_input: [depth, range]
+
+  kb_read:
+    profile: project-read
+    read_only: true
+    default_budget_tokens: 800
+    hard_limit_tokens: 2000
+    required_input: [resource_id]
+    optional_input: [address, max_tokens, include_assets, cursor]
+    defaults:
+      include_assets: false
+    rules:
+      - "address required unless resource is below safe small-resource threshold"
+
+  kb_start_work:
+    profile: project-maintain
+    read_only: false
+    required_input: [objective, expected_outputs, acceptance_criteria, actor]
+    optional_input: [input_refs]
+    output: [work_id, knowledge_version, brief_uri, closeout_requirements]
+
+  kb_finish_work:
+    profile: project-maintain
+    read_only: false
+    idempotency_key: "work_id + result_hash"
+    default_response_budget_tokens: 500
+    hard_response_limit_tokens: 1000
+    required_input: [work_id, outcome, summary, result_hash]
+    optional_input: [artifacts, claims, decisions, lessons, unresolved, evidence_refs]
+    outcomes: [completed, partial, failed, cancelled]
+
+  kb_review_memory:
+    profile: project-admin
+    read_only: false
+    required_input: [candidate_id, decision, rationale, reviewer]
+    optional_input: [edited_statement, supersedes]
+    decisions: [accept, reject, request_changes, supersede]
+
+response_contract:
+  text_summary: required
+  structured_content: required
+  output_schema: required
+  resource_links: preferred_for_large_content
+  absolute_paths: forbidden
+  secrets: forbidden
+
+security_defaults:
+  http_bind: 127.0.0.1
+  remote_http_enabled: false
+  unreviewed_visible_in_default_search: false
+  candidate_visible_in_default_search: false
+  write_tools_visible_to_read_profile: false

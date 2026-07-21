@@ -26,6 +26,9 @@
 
 ---
 
+> [!NOTE]
+> This fork is being specialized for the Changyi Jiuan research and social-practice knowledge system. See [docs/changyi-jiuan/](docs/changyi-jiuan/README.md) for the project charter, architecture, domain model, token-efficient MCP surface, memory lifecycle, roadmap, and acceptance plan. The upstream product documentation continues below.
+
 ## 🤔 Why MinerU Document Explorer?
 
 MinerU Document Explorer equips your agent with three tool suites — **Retrieve, Deep Read, and Ingest** — closing the full knowledge loop:
