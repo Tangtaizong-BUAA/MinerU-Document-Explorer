@@ -360,14 +360,21 @@ export class ProjectRuntime {
 
   async search(query: string, limit = 5, includeUnverified = false): Promise<Array<{ record: KnowledgeRecord; score: number; snippet: string }>> {
     const terms = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
-    return (await this.records()).map(item => ({ ...item, haystack: `${item.record.title}\n${item.body}\n${JSON.stringify(item.record)}`.toLocaleLowerCase() }))
+    const indexed = await Promise.all((await this.records()).map(async (item) => {
+      let normalized = "";
+      if (item.record.type === "artifact" && typeof item.record.normalized_markdown_path === "string") {
+        try { normalized = await readFile(join(this.root, item.record.normalized_markdown_path), "utf8"); } catch { /* stale derived text is excluded */ }
+      }
+      return { ...item, normalized, haystack: `${item.record.title}\n${item.body}\n${normalized}\n${JSON.stringify(item.record)}`.toLocaleLowerCase() };
+    }));
+    return indexed
       .filter(item => item.record.type !== "validation_event")
       .filter(item => includeUnverified || item.record.status === "accepted" || item.record.type !== "memory")
       .map(item => ({ ...item, score: terms.reduce((total, term) => total + (item.haystack.includes(term) ? 1 : 0), 0) }))
       .filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score || a.record.title.localeCompare(b.record.title))
       .slice(0, Math.min(limit, 20))
-      .map(item => ({ record: item.record, score: item.score, snippet: item.body.slice(0, 400) }));
+      .map(item => ({ record: item.record, score: item.score, snippet: (item.normalized || item.body).slice(0, 400) }));
   }
 
   async brief(projectId: string): Promise<Record<string, unknown>> {
@@ -467,6 +474,8 @@ export class ProjectRuntime {
 
   async ingestInventory(sourceRootId: string, actor: string): Promise<{ job_id: string; source_root_id: string; registered_artifact_ids: string[]; unchanged_artifact_ids: string[]; stale_artifact_ids: string[] }> {
     const inventory = await this.inventory(sourceRootId);
+    const sourceRoot = (await this.sourceRoots()).find(root => root.id === sourceRootId && root.enabled);
+    if (!sourceRoot) throw new Error(`Unknown or disabled source root: ${sourceRootId}`);
     const registered: string[] = [];
     const unchanged: string[] = [];
     const stale: string[] = [];
@@ -481,11 +490,27 @@ export class ProjectRuntime {
         await this.staleArtifactAndDependents(prior, actor);
         stale.push(prior.id);
       }
+      let status = "registered";
+      let parserStatus = "not_requested";
+      let parserFields: Record<string, unknown> = {};
+      let body = `# ${file.relative_path}\n\nInventory-only registration. No MinerU parsing has been requested.\n`;
+      if (file.mime_type === "text/markdown") {
+        const markdown = await readFile(sourceFilePath(this.root, sourceRoot, file.relative_path), "utf8");
+        const folder = `normalized/${safeName(id)}`;
+        const normalizedPath = `${folder}/document.md`;
+        const reportPath = `${folder}/parse-report.json`;
+        await this.writeDerived(normalizedPath, markdown.endsWith("\n") ? markdown : `${markdown}\n`);
+        await this.writeDerived(reportPath, JSON.stringify({ artifact_id: id, input_sha256: file.sha256, parser: "source_markdown", parser_mode: "local", egress: "none", normalized_markdown_path: normalizedPath, completed_at: now() }, null, 2) + "\n");
+        status = "parsed";
+        parserStatus = "completed";
+        parserFields = { parser_name: "source_markdown", parser_mode: "local", parser_completed_at: now(), normalized_markdown_path: normalizedPath, parse_report_path: reportPath, parsed_page_count: 0 };
+        body = `# ${file.relative_path}\n\nImported canonical Markdown. Original source is preserved in its configured source root.\n`;
+      }
       await this.upsertRecord({
-        id, type: "artifact", title: file.relative_path, status: "registered", project_id: inventory.project_id, created_by: actor,
+        id, type: "artifact", title: file.relative_path, status, project_id: inventory.project_id, created_by: actor,
         mime_type: file.mime_type, size_bytes: file.size_bytes, sha256: file.sha256, original_relative_path: file.relative_path,
-        acquired_at: file.modified_at, source_root_id: sourceRootId, parser_status: "not_requested", source_refs: [],
-      }, `# ${file.relative_path}\n\nInventory-only registration. No MinerU parsing has been requested.\n`);
+        acquired_at: file.modified_at, source_root_id: sourceRootId, parser_status: parserStatus, source_refs: [], ...parserFields,
+      }, body);
       registered.push(id);
     }
     await this.upsertRecord({ id: jobId, type: "ingestion_job", title: `Ingest ${sourceRootId}`, status: "completed", project_id: inventory.project_id, created_by: actor, operation: "ingest", request_hash: digest(`${sourceRootId}:${inventory.files.map(file => file.sha256).join(",")}`), registered_artifact_ids: registered, unchanged_artifact_ids: unchanged, stale_artifact_ids: stale });

@@ -248,7 +248,11 @@ describe("ProjectRuntime", () => {
 
         const first = await rt.ingestInventory("synthetic-source", "agent:test");
         expect(first.registered_artifact_ids).toHaveLength(1);
-        expect((await rt.get(first.registered_artifact_ids[0]!))!.record.original_relative_path).toBe("notes.md");
+        const firstArtifact = (await rt.get(first.registered_artifact_ids[0]!))!.record;
+        expect(firstArtifact.original_relative_path).toBe("notes.md");
+        expect(firstArtifact.status).toBe("parsed");
+        expect((await rt.readResource(`kb://artifact/${encodeURIComponent(firstArtifact.id)}/document`)).text).toBe("# Synthetic notes\n");
+        expect(await rt.search("Synthetic notes")).toEqual(expect.arrayContaining([expect.objectContaining({ record: expect.objectContaining({ id: firstArtifact.id }), snippet: expect.stringContaining("Synthetic notes") })]));
 
         const second = await rt.ingestInventory("synthetic-source", "agent:test");
         expect(second.registered_artifact_ids).toHaveLength(0);
