@@ -163,7 +163,7 @@ async function collectBody(req: IncomingMessage): Promise<string> {
 /**
  * Start MCP server over Streamable HTTP (JSON responses, no SSE).
  */
-export async function startMcpHttpServer(port: number, options?: { quiet?: boolean; dbPath?: string } & ProjectMcpOptions): Promise<HttpServerHandle> {
+export async function startMcpHttpServer(port: number, options?: { quiet?: boolean; dbPath?: string; bearerToken?: string } & ProjectMcpOptions): Promise<HttpServerHandle> {
   const { createStore } = await import("../index.js");
   const configPath = configExists() ? getConfigPath() : undefined;
   const store = await createStore({
@@ -171,6 +171,7 @@ export async function startMcpHttpServer(port: number, options?: { quiet?: boole
     ...(configPath ? { configPath } : {}),
   });
   const projectProfile = resolveProjectProfile(options?.projectProfile ?? process.env.CYJ_MCP_PROFILE);
+  const bearerToken = options?.bearerToken ?? process.env.CYJ_MCP_BEARER_TOKEN;
 
   // Pre-fetch default collection names for the legacy /query endpoint.
   const defaultCollectionNames = await store.getDefaultCollectionNames();
@@ -209,6 +210,12 @@ export async function startMcpHttpServer(port: number, options?: { quiet?: boole
     const pathname = nodeReq.url || "/";
 
     try {
+      if (pathname === "/mcp" && bearerToken && nodeReq.headers.authorization !== `Bearer ${bearerToken}`) {
+        nodeRes.writeHead(401, { "Content-Type": "application/json", "WWW-Authenticate": "Bearer" });
+        nodeRes.end(JSON.stringify({ error: "Missing or invalid MCP bearer token" }));
+        return;
+      }
+
       if (pathname === "/health" && nodeReq.method === "GET") {
         const body = JSON.stringify({ status: "ok", uptime: Math.floor((Date.now() - startTime) / 1000) });
         nodeRes.writeHead(200, { "Content-Type": "application/json" });

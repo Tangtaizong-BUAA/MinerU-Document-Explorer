@@ -53,4 +53,17 @@ describe("Changyi Jiuan HTTP MCP", () => {
     const result = await listed.json() as { result: { tools: Array<{ name: string }> } };
     expect(result.result.tools.map(tool => tool.name)).toContain("kb_finish_work");
   });
+
+  test("requires a configured bearer token before creating an MCP session", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cyj-mcp-http-auth-"));
+    roots.push(root);
+    const server = await startMcpHttpServer(0, { quiet: true, dbPath: join(root, "qmd.sqlite"), projectProfile: "project-read", projectDataDir: join(root, "knowledge"), bearerToken: "test-token" });
+    servers.push(server);
+    const endpoint = `http://127.0.0.1:${server.port}/mcp`;
+    const payload = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } });
+    const denied = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: payload });
+    expect(denied.status).toBe(401);
+    const accepted = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: "Bearer test-token" }, body: payload });
+    expect(accepted.status).toBe(200);
+  });
 });
