@@ -100,6 +100,12 @@ export async function extractPdf(filepath: string): Promise<PdfExtractionResult>
   return parsePythonResult(data, PdfExtractionResultSchema, "extract_pdf.py");
 }
 
+/** Call the MinerU Cloud extractor without exposing its API key in process arguments. */
+export async function extractPdfMineruCloud(filepath: string, apiKey: string): Promise<PdfExtractionResult> {
+  const data = await callPythonScript("extract_pdf_mineru.py", [filepath], { MINERU_API_KEY: apiKey });
+  return parsePythonResult(data, PdfExtractionResultSchema, "extract_pdf_mineru.py");
+}
+
 /**
  * Call extract_pdf_pageindex.py and return typed PageIndex result.
  */

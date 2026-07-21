@@ -25,6 +25,7 @@ export const PdfExtractionResultSchema = z.object({
     title: z.string(),
     page: z.number(),
   })).optional(),
+  markdown: z.string().optional(),
 });
 
 export type PdfExtractionResult = z.infer<typeof PdfExtractionResultSchema>;

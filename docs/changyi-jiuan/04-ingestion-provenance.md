@@ -73,7 +73,7 @@ source_roots:
     relative_path: incoming
 ```
 
-当前实现的 `kb_ingest` 先支持本地只读 `inventory` 和基于 SHA-256 的 `ingest` 登记。它不会调用 MinerU、不会上传文件，也不会删除或改写原件；解析、重试队列与派生 Markdown 在后续受策略控制的阶段接入。
+当前实现的 `kb_ingest` 支持本地只读 `inventory` 和基于 SHA-256 的 `ingest` 登记。登记后，`project-admin` 可用 `kb_parse_artifact` 将单个已登记 PDF 交给 MinerU API：凭据只从 `MINERU_API_KEY` 或受控 QMD 配置读取，不接受 MCP 请求传入；每次外发均写入审计，原件不会被改写。非 PDF、未登记 artifact、未配置凭据或解析失败都会明确返回失败，不能静默改走其他云服务。
 
 ## 4. 摄取状态机
 

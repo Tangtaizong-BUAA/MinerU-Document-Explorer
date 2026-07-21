@@ -33,6 +33,14 @@ function safeRoot(projectRoot: string, relativePath: string): string {
   return resolved;
 }
 
+export function sourceFilePath(projectRoot: string, sourceRoot: SourceRoot, relativePath: string): string {
+  const root = safeRoot(projectRoot, sourceRoot.relative_path);
+  if (!relativePath || isAbsolute(relativePath)) throw new Error("Artifact paths must be non-empty paths relative to their configured source root");
+  const resolved = resolve(root, relativePath);
+  if (relative(root, resolved).startsWith("..")) throw new Error("Artifact path escapes its configured source root");
+  return resolved;
+}
+
 export function parseSourceRoots(text: string): SourceRoot[] {
   const parsed = YAML.parse(text) as unknown;
   const roots = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as { source_roots?: unknown }).source_roots : undefined;

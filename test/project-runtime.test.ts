@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProjectRuntime } from "../src/project/runtime.js";
+import { resetDocReadingConfig } from "../src/doc-reading-config.js";
 
 async function freshRuntime(): Promise<ProjectRuntime> {
   const dir = await mkdtemp(join(tmpdir(), "cyj-test-"));
@@ -254,6 +255,38 @@ describe("ProjectRuntime", () => {
         const second = await rt.ingestInventory("synthetic-source", "agent:test");
         expect(second.registered_artifact_ids).toHaveLength(0);
         expect(second.unchanged_artifact_ids).toEqual(first.registered_artifact_ids);
+      });
+    });
+  });
+
+  describe("MinerU API parsing gate", () => {
+    test("fails closed without configured credentials and does not modify the original artifact", async () => {
+      await withRuntime(async (rt, dir) => {
+        await seedProject(rt);
+        await mkdir(join(dir, "incoming"));
+        await writeFile(join(dir, "incoming", "report.pdf"), "%PDF-synthetic", "utf8");
+        await writeFile(join(dir, "ingestion", "source-roots.yaml"), [
+          "source_roots:",
+          "  - id: synthetic-source",
+          "    project_id: proj-1",
+          "    relative_path: incoming",
+        ].join("\n"), "utf8");
+        await rt.upsertRecord({
+          id: "artifact:cyj:pdf-gate", type: "artifact", title: "report.pdf", status: "registered", project_id: "proj-1", created_by: ACTOR,
+          mime_type: "application/pdf", size_bytes: 14, sha256: "synthetic", original_relative_path: "report.pdf", acquired_at: "2026-01-01T00:00:00.000Z", source_root_id: "synthetic-source",
+        });
+
+        const originalKey = process.env.MINERU_API_KEY;
+        delete process.env.MINERU_API_KEY;
+        resetDocReadingConfig();
+        try {
+          await expect(rt.parseArtifactWithMinerU("artifact:cyj:pdf-gate", "agent:test")).rejects.toThrow("MinerU API parsing requires");
+          expect((await rt.get("artifact:cyj:pdf-gate"))!.record.status).toBe("registered");
+        } finally {
+          if (originalKey === undefined) delete process.env.MINERU_API_KEY;
+          else process.env.MINERU_API_KEY = originalKey;
+          resetDocReadingConfig();
+        }
       });
     });
   });

@@ -7,12 +7,12 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { lstat, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import YAML from "yaml";
 import { validateProjectRecords, type ValidationIssue } from "./validation.js";
 import { buildProjectView, PROJECT_VIEW_KINDS, type ProjectViewKind } from "./views.js";
-import { inventorySourceRoot, parseSourceRoots, type InventoryEntry, type SourceRoot } from "./ingestion.js";
+import { inventorySourceRoot, parseSourceRoots, sourceFilePath, type InventoryEntry, type SourceRoot } from "./ingestion.js";
 
 export type ProjectProfile = "upstream-full" | "project-read" | "project-maintain" | "project-admin";
 export type MemoryKind = "fact" | "decision" | "procedure" | "lesson" | "constraint" | "preference" | "open_question";
@@ -387,6 +387,22 @@ export class ProjectRuntime {
     }
   }
 
+  private async sourceRootForArtifact(record: KnowledgeRecord): Promise<SourceRoot> {
+    const sourceRootId = record.source_root_id;
+    if (typeof sourceRootId !== "string") throw new Error(`Artifact ${record.id} has no source_root_id`);
+    const sourceRoot = (await this.sourceRoots()).find(root => root.id === sourceRootId && root.enabled);
+    if (!sourceRoot) throw new Error(`Artifact ${record.id} references an unknown or disabled source root`);
+    return sourceRoot;
+  }
+
+  private async writeDerived(relativePath: string, text: string): Promise<void> {
+    const target = join(this.root, relativePath);
+    await mkdir(dirname(target), { recursive: true });
+    const temp = `${target}.${randomUUID()}.tmp`;
+    await writeFile(temp, text, "utf8");
+    await rename(temp, target);
+  }
+
   async inventory(sourceRootId: string): Promise<{ source_root_id: string; project_id: string; files: InventoryEntry[] }> {
     const sourceRoot = (await this.sourceRoots()).find(root => root.id === sourceRootId && root.enabled);
     if (!sourceRoot) throw new Error(`Unknown or disabled source root: ${sourceRootId}`);
@@ -410,6 +426,50 @@ export class ProjectRuntime {
     }
     await this.appendAudit({ type: "inventory_ingest", source_root_id: sourceRootId, actor, registered_artifact_ids: registered, unchanged_artifact_ids: unchanged });
     return { source_root_id: sourceRootId, registered_artifact_ids: registered, unchanged_artifact_ids: unchanged };
+  }
+
+  async parseArtifactWithMinerU(artifactId: string, actor: string): Promise<{ artifact_id: string; status: "parsed" | "failed"; normalized_markdown_path?: string; page_count?: number; error_code?: string }> {
+    const existing = await this.get(artifactId);
+    if (!existing || existing.record.type !== "artifact") throw new Error(`Unknown artifact: ${artifactId}`);
+    const artifact = existing.record;
+    if (artifact.mime_type !== "application/pdf") throw new Error("MinerU API parsing currently supports registered PDF artifacts only");
+    if (typeof artifact.original_relative_path !== "string") throw new Error(`Artifact ${artifactId} has no original_relative_path`);
+    const sourceRoot = await this.sourceRootForArtifact(artifact);
+    const sourcePath = sourceFilePath(this.root, sourceRoot, artifact.original_relative_path);
+    const sourceStat = await lstat(sourcePath);
+    if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) throw new Error(`Artifact ${artifactId} source is not a regular file`);
+
+    const { getMinerUCredentials } = await import("../doc-reading-config.js");
+    const credentials = getMinerUCredentials();
+    if (!credentials) throw new Error("MinerU API parsing requires MINERU_API_KEY or qmd doc-reading credentials");
+
+    await this.upsertRecord({ ...artifact, status: "parsing", created_by: actor, parser_name: "mineru_cloud", parser_mode: "api", parser_started_at: now() }, existing.body);
+    try {
+      const { extractPdfMineruCloud } = await import("../backends/python-utils.js");
+      const result = await extractPdfMineruCloud(sourcePath, credentials.api_key);
+      const pages = result.pages ?? [];
+      const markdown = result.markdown?.trim() || pages.map(page => `## Page ${page.page_idx + 1}\n\n${page.text}`).join("\n\n").trim();
+      if (result.error || !markdown) throw new Error(result.error || "MinerU returned no Markdown or page text");
+
+      const folder = `normalized/${safeName(artifact.id)}`;
+      const normalizedPath = `${folder}/document.md`;
+      const reportPath = `${folder}/parse-report.json`;
+      await this.writeDerived(normalizedPath, markdown + "\n");
+      await this.writeDerived(reportPath, JSON.stringify({
+        artifact_id: artifact.id, input_sha256: artifact.sha256, parser: "mineru_cloud", parser_mode: "api", egress: "mineru_api",
+        page_count: pages.length, normalized_markdown_path: normalizedPath, completed_at: now(),
+      }, null, 2) + "\n");
+      await this.upsertRecord({
+        ...artifact, status: "parsed", created_by: actor, parser_name: "mineru_cloud", parser_mode: "api", parser_completed_at: now(),
+        normalized_markdown_path: normalizedPath, parse_report_path: reportPath, parsed_page_count: pages.length,
+      }, existing.body);
+      await this.appendAudit({ type: "mineru_api_parse", artifact_id: artifact.id, actor, egress: "mineru_api", outcome: "parsed", page_count: pages.length });
+      return { artifact_id: artifact.id, status: "parsed", normalized_markdown_path: normalizedPath, page_count: pages.length };
+    } catch (error) {
+      await this.upsertRecord({ ...artifact, status: "failed", created_by: actor, parser_name: "mineru_cloud", parser_mode: "api", parser_failed_at: now(), parser_error_code: "mineru_api_parse_failed" }, existing.body);
+      await this.appendAudit({ type: "mineru_api_parse", artifact_id: artifact.id, actor, egress: "mineru_api", outcome: "failed", error_code: "mineru_api_parse_failed" });
+      return { artifact_id: artifact.id, status: "failed", error_code: "mineru_api_parse_failed" };
+    }
   }
 
   async readResource(uriOrId: string): Promise<{ uri: string; title: string; text: string }> {

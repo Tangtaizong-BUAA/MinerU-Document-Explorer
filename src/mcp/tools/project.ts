@@ -141,6 +141,20 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     }
   });
 
+  server.registerTool("kb_parse_artifact", {
+    title: "Parse Registered PDF with MinerU API",
+    description: "Send one registered PDF artifact to MinerU API, write normalized Markdown and a parse report, and append an egress audit event. Requires configured MinerU credentials.",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    inputSchema: { artifact_id: z.string() },
+  }, async ({ artifact_id }) => {
+    try {
+      const output = await runtime.parseArtifactWithMinerU(artifact_id, `agent:${profile}`);
+      return textResult(`Artifact ${output.artifact_id}: ${output.status}`, output);
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  });
+
   server.registerTool("kb_maintain", {
     title: "Project Health",
     description: "Return Agent-operable project runtime health. Phase 1 exposes health only; destructive maintenance is intentionally absent.",

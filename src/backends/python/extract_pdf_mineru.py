@@ -3,7 +3,7 @@
 Extract per-page text from a PDF using the MinerU cloud SDK (mineru-open-sdk).
 
 Usage:
-    extract_pdf_mineru.py <filepath> <api_key> [api_url]
+    MINERU_API_KEY=... extract_pdf_mineru.py <filepath>
 
 Output (stdout, JSON):
     { "pages": [{"page_idx": N, "text": "...", "tokens": N}], "bookmarks": [] }
@@ -13,6 +13,7 @@ On error:
 """
 import sys
 import json
+import os
 from collections import defaultdict
 
 
@@ -34,12 +35,15 @@ def extract_text_from_item(item: dict) -> str:
 
 
 def main():
-    if len(sys.argv) < 3:
-        print(json.dumps({"error": "Usage: extract_pdf_mineru.py <filepath> <api_key> [api_url]"}))
+    if len(sys.argv) < 2:
+        print(json.dumps({"error": "Usage: MINERU_API_KEY=... extract_pdf_mineru.py <filepath>"}))
         sys.exit(1)
 
     filepath = sys.argv[1]
-    api_key = sys.argv[2]
+    api_key = os.environ.get("MINERU_API_KEY")
+    if not api_key:
+        print(json.dumps({"error": "MINERU_API_KEY is not configured"}))
+        sys.exit(1)
 
     try:
         from mineru import MinerU
@@ -78,6 +82,7 @@ def main():
         })
 
     print(json.dumps({
+        "source": "mineru",
         "pages": pages,
         "bookmarks": [],
         "markdown": markdown,
