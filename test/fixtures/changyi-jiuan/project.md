@@ -10,6 +10,9 @@ created_by: fixture:phase-1
 confidentiality: public
 schema_version: 1
 mission: 验证科研与社会实践一体化项目的结构化信息维护和可追溯 Agent 协作链路。
+start_date: "2026-07-21"
+owners: [fixture:phase-1]
+current_phase: synthetic-validation
 source_refs: []
 ---
 

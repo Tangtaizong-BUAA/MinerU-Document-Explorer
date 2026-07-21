@@ -31,7 +31,7 @@ describe("Changyi Jiuan MCP profiles", () => {
       projectDataDir: await projectRoot(),
     });
 
-    expect(toolNames(server)).toEqual(["kb_brief", "kb_lookup", "kb_outline", "kb_read", "kb_search"]);
+    expect(toolNames(server)).toEqual(["kb_brief", "kb_lookup", "kb_outline", "kb_read", "kb_search", "kb_view"]);
     expect(resourceTemplateNames(server)).toEqual(["project-record"]);
   });
 

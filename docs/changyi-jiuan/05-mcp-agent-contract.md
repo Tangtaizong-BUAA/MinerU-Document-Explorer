@@ -66,6 +66,12 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 输出：仅返回请求字段、稳定 ID、标题和版本。正文通过资源 URI 按需读取。
 
+### 3.2.1 `kb_view`
+
+用途：从 canonical Markdown 记录即时重建项目总览、时间线、人员、成果、风险或质量视图。它只读且不落盘，不产生第二套可手工编辑的项目事实源。
+
+输入：`project_id` 与 `view`；`view` 为 `overview/timeline/people/deliverables/risks/quality` 之一。
+
 ### 3.3 `kb_search`
 
 用途：跨规范化资料和正式知识进行受控检索。

@@ -3,6 +3,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ProjectRuntime, type ProjectProfile } from "../../project/runtime.js";
+import { PROJECT_VIEW_KINDS } from "../../project/views.js";
 
 const recordFilters = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional();
 
@@ -59,6 +60,16 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
     }
+  });
+
+  server.registerTool("kb_view", {
+    title: "Project Structured View",
+    description: "Rebuild a compact structured view from canonical Markdown records. This is read-only and never creates a second source of truth.",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    inputSchema: { project_id: z.string(), view: z.enum(PROJECT_VIEW_KINDS) },
+  }, async ({ project_id, view }) => {
+    const output = await runtime.view(project_id, view);
+    return textResult(YAMLish(output, 800), output);
   });
 
   server.registerTool("kb_read", {

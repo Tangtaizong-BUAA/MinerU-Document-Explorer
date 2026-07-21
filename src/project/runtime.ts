@@ -10,6 +10,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import YAML from "yaml";
+import { validateProjectRecords, type ValidationIssue } from "./validation.js";
+import { buildProjectView, PROJECT_VIEW_KINDS, type ProjectViewKind } from "./views.js";
 
 export type ProjectProfile = "upstream-full" | "project-read" | "project-maintain" | "project-admin";
 export type MemoryKind = "fact" | "decision" | "procedure" | "lesson" | "constraint" | "preference" | "open_question";
@@ -362,6 +364,17 @@ export class ProjectRuntime {
     const activeWork = records.filter(record => record.type === "work_item" && record.project_id === projectId && ["in_progress", "awaiting_closeout", "blocked"].includes(record.status));
     const memories = records.filter(record => record.type === "memory" && record.project_id === projectId && record.status === "accepted").slice(0, 5);
     return { project_id: projectId, project: project ? { id: project.id, title: project.title, status: project.status, mission: project.mission } : null, active_work: activeWork.map(record => ({ id: record.id, title: record.title, status: record.status })), accepted_memory: memories.map(record => ({ id: record.id, kind: record.kind, statement: record.statement, scope: record.scope })), generated_at: now() };
+  }
+
+  async view(projectId: string, kind: ProjectViewKind): Promise<Record<string, unknown>> {
+    if (!PROJECT_VIEW_KINDS.includes(kind)) throw new Error(`Unsupported project view: ${kind}`);
+    return buildProjectView((await this.records()).map(item => item.record), projectId, kind);
+  }
+
+  async lint(projectId?: string): Promise<ValidationIssue[]> {
+    const records = (await this.records()).map(item => item.record);
+    const scoped = projectId ? records.filter(record => record.project_id === projectId || record.id === projectId) : records;
+    return validateProjectRecords(scoped);
   }
 
   async readResource(uriOrId: string): Promise<{ uri: string; title: string; text: string }> {

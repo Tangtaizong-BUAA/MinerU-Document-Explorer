@@ -17,7 +17,7 @@ profiles:
     tools: upstream_all
   project-read:
     purpose: query subagent knowledge access
-    tools: [kb_brief, kb_lookup, kb_search, kb_outline, kb_read]
+    tools: [kb_brief, kb_lookup, kb_search, kb_outline, kb_read, kb_view]
   project-maintain:
     purpose: default orchestrator work lifecycle and automatic policy submission
     extends: project-read
@@ -86,6 +86,17 @@ tools:
       include_assets: false
     rules:
       - "address required unless resource is below safe small-resource threshold"
+
+  kb_view:
+    profile: project-read
+    read_only: true
+    default_budget_tokens: 800
+    hard_limit_tokens: 1200
+    required_input: [project_id, view]
+    views: [overview, timeline, people, deliverables, risks, quality]
+    rules:
+      - "views are rebuilt from canonical Markdown records"
+      - "views must not become a second editable source of truth"
 
   kb_start_work:
     profile: project-maintain

@@ -203,4 +203,30 @@ describe("ProjectRuntime", () => {
       });
     });
   });
+
+  describe("schema lint and rebuildable views", () => {
+    test("reports invalid records and rebuilds a timeline without writing a view file", async () => {
+      await withRuntime(async (rt) => {
+        await rt.upsertRecord({
+          id: "project:cyj:main", type: "project", title: "Main", status: "active", project_id: "project:cyj:main", created_by: ACTOR,
+          mission: "Validate structured views", start_date: "2026-01-01", owners: [ACTOR], current_phase: "phase-2",
+        });
+        await rt.upsertRecord({
+          id: "activity:cyj:visit-1", type: "activity", title: "Field visit", status: "completed", project_id: "project:cyj:main", created_by: ACTOR,
+          kind: "field_visit", occurred_at: "2026-02-03T09:00:00.000Z",
+        });
+        await rt.upsertRecord({
+          id: "claim:cyj:unsupported", type: "claim", title: "Unsupported", status: "supported", project_id: "project:cyj:main", created_by: ACTOR,
+          kind: "fact", statement: "No evidence was attached",
+        });
+
+        const timeline = await rt.view("project:cyj:main", "timeline");
+        expect(timeline.events).toEqual([expect.objectContaining({ id: "activity:cyj:visit-1", at: "2026-02-03T09:00:00.000Z" })]);
+        expect((await rt.records()).filter(item => item.record.type === "view")).toHaveLength(0);
+
+        const issues = await rt.lint("project:cyj:main");
+        expect(issues).toContainEqual(expect.objectContaining({ code: "supported_claim_missing_evidence", record_id: "claim:cyj:unsupported" }));
+      });
+    });
+  });
 });
