@@ -6,6 +6,36 @@ import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { QMDStore } from "../../index.js";
 import { addLineNumbers } from "../../index.js";
+import type { ProjectRuntime } from "../../project/runtime.js";
+
+/**
+ * Register the kb:// resource namespace used by the Changyi Jiuan project
+ * profile. Resources remain individually addressable; agents discover stable
+ * identifiers through the low-token project tools instead of listing a corpus.
+ */
+export function registerProjectResource(server: McpServer, runtime: ProjectRuntime): void {
+  server.registerResource(
+    "project-record",
+    new ResourceTemplate("kb://{+path}", { list: undefined }),
+    {
+      title: "Changyi Jiuan knowledge record",
+      description: "A project record, memory, or generated project brief. Discover canonical URIs through kb_* tools.",
+      mimeType: "text/markdown",
+    },
+    async (uri) => {
+      const resource = await runtime.readResource(uri.href);
+      return {
+        contents: [{
+          uri: uri.href,
+          name: resource.title,
+          title: resource.title,
+          mimeType: "text/markdown",
+          text: resource.text,
+        }],
+      };
+    },
+  );
+}
 
 /**
  * Register the qmd://document resource.

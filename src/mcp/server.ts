@@ -17,18 +17,20 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { QMDStore, ExpandedQuery } from "../index.js";
 import { getDefaultDbPath } from "../index.js";
 import { getConfigPath, configExists } from "../collections.js";
+import { ProjectRuntime, resolveProjectProfile, resolveProjectRoot, type ProjectProfile } from "../project/runtime.js";
 
 // =============================================================================
 // Modular imports
 // =============================================================================
 
 import { buildInstructions } from "./server/utils.js";
-import { registerDocumentResource, handleDocumentResource } from "./resources/index.js";
+import { registerDocumentResource, handleDocumentResource, registerProjectResource } from "./resources/index.js";
 import {
   registerCoreTools,
   registerDocumentTools,
   registerWritingTools,
   registerWikiTools,
+  registerProjectTools,
 } from "./tools/index.js";
 
 // =============================================================================
@@ -39,13 +41,37 @@ import {
  * Create an MCP server with all QMD tools, resources, and prompts registered.
  * Shared by both stdio and HTTP transports.
  */
-async function createMcpServer(store: QMDStore): Promise<McpServer> {
+export type ProjectMcpOptions = {
+  projectProfile?: ProjectProfile;
+  projectDataDir?: string;
+};
+
+export async function createMcpServer(store: QMDStore, options: ProjectMcpOptions = {}): Promise<McpServer> {
+  const profile = resolveProjectProfile(options.projectProfile ?? process.env.CYJ_MCP_PROFILE);
+  const projectRoot = resolveProjectRoot(options.projectDataDir ?? process.env.CYJ_KB_ROOT);
+  const instructions = profile === "upstream-full"
+    ? await buildInstructions(store)
+    : [
+        "Changyi Jiuan project knowledge base.",
+        "Start with kb_brief, then use kb_lookup or kb_search for focused evidence.",
+        "Use kb_start_work before a material task and kb_finish_work after it.",
+        "Memory promotion is policy-controlled; never claim quarantined evidence as established fact.",
+      ].join("\n");
   const server = new McpServer(
     { name: "mineru-document-explorer", version: "1.0.0" },
-    { instructions: await buildInstructions(store) },
+    { instructions },
   );
 
-  // Pre-fetch default collection names for search tools
+  if (profile !== "upstream-full") {
+    if (!projectRoot) throw new Error("CYJ_KB_ROOT or projectDataDir is required for a project MCP profile");
+    const runtime = new ProjectRuntime(projectRoot);
+    await runtime.initialize();
+    registerProjectResource(server, runtime);
+    registerProjectTools(server, runtime, profile);
+    return server;
+  }
+
+  // Pre-fetch default collection names for the upstream-compatible profile.
   const defaultCollectionNames = await store.getDefaultCollectionNames();
 
   // ---------------------------------------------------------------------------
@@ -80,14 +106,14 @@ async function createMcpServer(store: QMDStore): Promise<McpServer> {
 // Transport: stdio (default)
 // =============================================================================
 
-export async function startMcpServer(dbPath?: string): Promise<void> {
+export async function startMcpServer(dbPath?: string, options: ProjectMcpOptions = {}): Promise<void> {
   const { createStore } = await import("../index.js");
   const configPath = configExists() ? getConfigPath() : undefined;
   const store = await createStore({
     dbPath: dbPath ?? getDefaultDbPath(),
     ...(configPath ? { configPath } : {}),
   });
-  const server = await createMcpServer(store);
+  const server = await createMcpServer(store, options);
   const transport = new StdioServerTransport();
 
   const cleanup = async () => { try { await store.close(); } catch {} };
@@ -137,15 +163,16 @@ async function collectBody(req: IncomingMessage): Promise<string> {
 /**
  * Start MCP server over Streamable HTTP (JSON responses, no SSE).
  */
-export async function startMcpHttpServer(port: number, options?: { quiet?: boolean; dbPath?: string }): Promise<HttpServerHandle> {
+export async function startMcpHttpServer(port: number, options?: { quiet?: boolean; dbPath?: string } & ProjectMcpOptions): Promise<HttpServerHandle> {
   const { createStore } = await import("../index.js");
   const configPath = configExists() ? getConfigPath() : undefined;
   const store = await createStore({
     dbPath: options?.dbPath ?? getDefaultDbPath(),
     ...(configPath ? { configPath } : {}),
   });
+  const projectProfile = resolveProjectProfile(options?.projectProfile ?? process.env.CYJ_MCP_PROFILE);
 
-  // Pre-fetch default collection names
+  // Pre-fetch default collection names for the legacy /query endpoint.
   const defaultCollectionNames = await store.getDefaultCollectionNames();
 
   // Session map for HTTP transport
@@ -160,7 +187,7 @@ export async function startMcpHttpServer(port: number, options?: { quiet?: boole
         log(`${ts()} New session ${sessionId} (${sessions.size} active)`);
       },
     });
-    const server = await createMcpServer(store);
+    const server = await createMcpServer(store, options);
     await server.connect(transport);
 
     transport.onclose = () => {
@@ -192,6 +219,11 @@ export async function startMcpHttpServer(port: number, options?: { quiet?: boole
 
       // REST endpoint: POST /query
       if ((pathname === "/query" || pathname === "/search") && nodeReq.method === "POST") {
+        if (projectProfile !== "upstream-full") {
+          nodeRes.writeHead(404, { "Content-Type": "application/json" });
+          nodeRes.end(JSON.stringify({ error: "Legacy query endpoints are disabled for project MCP profiles; use /mcp." }));
+          return;
+        }
         const rawBody = await collectBody(nodeReq);
         const params = JSON.parse(rawBody);
 
