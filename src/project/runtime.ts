@@ -19,6 +19,15 @@ export type MemoryKind = "fact" | "decision" | "procedure" | "lesson" | "constra
 export type MemoryStatus = "candidate" | "validating" | "accepted" | "quarantined" | "rejected" | "disputed" | "superseded";
 export type Confidentiality = "public" | "internal" | "restricted" | "secret";
 
+export type ImageAssociation = {
+  alt_text?: string;
+  caption?: string;
+  page?: number;
+  slide?: number;
+  section?: string;
+  resource_uri: string;
+};
+
 export type KnowledgeRecord = {
   id: string;
   type: string;
@@ -129,6 +138,54 @@ function parseRecord(text: string): { record: KnowledgeRecord; body: string } {
     if (typeof record[key] !== "string" || record[key] === "") throw new Error(`Project record missing ${key}`);
   }
   return { record, body: match[2] ?? "" };
+}
+
+function extractImageAssociations(markdown: string, artifactId: string): ImageAssociation[] {
+  const associations: ImageAssociation[] = [];
+  const lines = markdown.split("\n");
+  const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/;
+
+  let currentSection = "";
+  let currentPage: number | undefined;
+  let currentSlide: number | undefined;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+
+    const headingMatch = line.match(/^#{1,6}\s+(.+)/);
+    if (headingMatch) {
+      currentSection = headingMatch[1]!;
+      const pageMatch = currentSection.match(/^Page\s+(\d+)$/i);
+      if (pageMatch) { currentPage = parseInt(pageMatch[1]!, 10); }
+      const slideMatch = currentSection.match(/^Slide\s+(\d+)$/i);
+      if (slideMatch) { currentSlide = parseInt(slideMatch[1]!, 10); }
+      continue;
+    }
+
+    const imgMatch = imageRegex.exec(line);
+    if (!imgMatch) continue;
+
+    const altText = imgMatch[1]?.trim() || undefined;
+    let caption: string | undefined;
+
+    if (i > 0) {
+      const prev = lines[i - 1]!.trim();
+      if (prev && !/^[#>\-*`|]/.test(prev) && !imageRegex.test(prev)) {
+        caption = prev;
+      }
+    }
+
+    associations.push({
+      alt_text: altText,
+      caption,
+      page: currentPage,
+      slide: currentSlide,
+      section: currentSection || undefined,
+      resource_uri: `kb://artifact/${encodeURIComponent(artifactId)}/image/${associations.length}`,
+    });
+  }
+
+  return associations;
 }
 
 export class ProjectRuntime {
@@ -358,7 +415,7 @@ export class ProjectRuntime {
     }).slice(0, Math.min(limit, 100));
   }
 
-  async search(query: string, limit = 5, includeUnverified = false): Promise<Array<{ record: KnowledgeRecord; score: number; snippet: string }>> {
+  async search(query: string, limit = 5, includeUnverified = false): Promise<Array<{ record: KnowledgeRecord; score: number; snippet: string; visual_context?: ImageAssociation[] }>> {
     const terms = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
     const indexed = await Promise.all((await this.records()).map(async (item) => {
       let normalized = "";
@@ -374,7 +431,11 @@ export class ProjectRuntime {
       .filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score || a.record.title.localeCompare(b.record.title))
       .slice(0, Math.min(limit, 20))
-      .map(item => ({ record: item.record, score: item.score, snippet: (item.normalized || item.body).slice(0, 400) }));
+      .map(item => {
+        const imageAssociations = item.record.type === "artifact" ? (item.record.image_associations as ImageAssociation[] | undefined) : undefined;
+        const visualContext = imageAssociations?.length ? imageAssociations.slice(0, 5) : undefined;
+        return { record: item.record, score: item.score, snippet: (item.normalized || item.body).slice(0, 400), visual_context: visualContext?.length ? visualContext : undefined };
+      });
   }
 
   async brief(projectId: string): Promise<Record<string, unknown>> {
@@ -499,11 +560,13 @@ export class ProjectRuntime {
         const folder = `normalized/${safeName(id)}`;
         const normalizedPath = `${folder}/document.md`;
         const reportPath = `${folder}/parse-report.json`;
-        await this.writeDerived(normalizedPath, markdown.endsWith("\n") ? markdown : `${markdown}\n`);
+        const normalizedContent = markdown.endsWith("\n") ? markdown : `${markdown}\n`;
+        await this.writeDerived(normalizedPath, normalizedContent);
         await this.writeDerived(reportPath, JSON.stringify({ artifact_id: id, input_sha256: file.sha256, parser: "source_markdown", parser_mode: "local", egress: "none", normalized_markdown_path: normalizedPath, completed_at: now() }, null, 2) + "\n");
+        const imageAssociations = extractImageAssociations(normalizedContent, id);
         status = "parsed";
         parserStatus = "completed";
-        parserFields = { parser_name: "source_markdown", parser_mode: "local", parser_completed_at: now(), normalized_markdown_path: normalizedPath, parse_report_path: reportPath, parsed_page_count: 0 };
+        parserFields = { parser_name: "source_markdown", parser_mode: "local", parser_completed_at: now(), normalized_markdown_path: normalizedPath, parse_report_path: reportPath, parsed_page_count: 0, image_associations: imageAssociations };
         body = `# ${file.relative_path}\n\nImported canonical Markdown. Original source is preserved in its configured source root.\n`;
       }
       await this.upsertRecord({
@@ -550,14 +613,17 @@ export class ProjectRuntime {
       const folder = `normalized/${safeName(artifact.id)}`;
       const normalizedPath = `${folder}/document.md`;
       const reportPath = `${folder}/parse-report.json`;
-      await this.writeDerived(normalizedPath, markdown + "\n");
+      const normalizedMarkdown = markdown + "\n";
+      await this.writeDerived(normalizedPath, normalizedMarkdown);
       await this.writeDerived(reportPath, JSON.stringify({
         artifact_id: artifact.id, input_sha256: artifact.sha256, parser: "mineru_cloud", parser_mode: "api", egress: "mineru_api",
         page_count: pages.length, normalized_markdown_path: normalizedPath, completed_at: now(),
       }, null, 2) + "\n");
+      const imageAssociations = extractImageAssociations(normalizedMarkdown, artifact.id);
       await this.upsertRecord({
         ...artifact, status: "parsed", created_by: actor, parser_name: "mineru_cloud", parser_mode: "api", parser_completed_at: now(),
         normalized_markdown_path: normalizedPath, parse_report_path: reportPath, parsed_page_count: pages.length,
+        image_associations: imageAssociations,
       }, existing.body);
       await this.appendAudit({ type: "mineru_api_parse", artifact_id: artifact.id, actor, egress: "mineru_api", outcome: "parsed", page_count: pages.length });
       return { artifact_id: artifact.id, status: "parsed", normalized_markdown_path: normalizedPath, page_count: pages.length };
@@ -630,6 +696,14 @@ export class ProjectRuntime {
         const offset = matches[start]!.index ?? 0;
         const end = matches[start + 1]?.index ?? fullText.length;
         return { uri: uriOrId, title: `${artifact.record.title} — page ${page}`, text: fullText.slice(offset, end).trim() };
+      }
+      if (parts[4] === "image") {
+        const imageIdx = Number(parts[5]);
+        const imageAssociations = artifact.record.image_associations as ImageAssociation[] | undefined;
+        if (!imageAssociations || imageAssociations.length === 0) throw new Error(`Artifact has no image associations: ${artifactId}`);
+        if (!Number.isInteger(imageIdx) || imageIdx < 0 || imageIdx >= imageAssociations.length) throw new Error(`Image index ${imageIdx} is not addressable in this artifact (0–${imageAssociations.length - 1})`);
+        const ia = imageAssociations[imageIdx]!;
+        return { uri: uriOrId, title: `${artifact.record.title} — image ${imageIdx}`, text: YAML.stringify({ resource_uri: ia.resource_uri, alt_text: ia.alt_text, caption: ia.caption, page: ia.page, slide: ia.slide, section: ia.section }) };
       }
       return { uri: uriOrId, title: artifact.record.title, text: renderRecord(artifact.record, artifact.body) };
     }

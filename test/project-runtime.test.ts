@@ -349,4 +349,128 @@ describe("ProjectRuntime", () => {
       });
     });
   });
+
+  describe("visual context RAG", () => {
+    test("extracts image associations from source markdown during ingestion", async () => {
+      await withRuntime(async (rt, dir) => {
+        await seedProject(rt);
+        await rt.configureSourceRoot({ id: "visual-src", project_id: "proj-1", relative_path: "visual-in", actor: "agent:test" });
+        await writeFile(join(dir, "visual-in", "report.md"), [
+          "# System Architecture",
+          "",
+          "## Page 1",
+          "",
+          "The system consists of three layers.",
+          "",
+          "Architecture diagram",
+          "![Architecture Overview](./assets/arch.png)",
+          "",
+          "## Page 2",
+          "",
+          "The data flow is shown below.",
+          "",
+          "![Data Flow](./assets/flow.png)",
+          "",
+        ].join("\n"), "utf8");
+
+        const first = await rt.ingestInventory("visual-src", "agent:test");
+        expect(first.registered_artifact_ids).toHaveLength(1);
+        const artifact = (await rt.get(first.registered_artifact_ids[0]!))!.record;
+        const images = artifact.image_associations as Array<Record<string, unknown>> | undefined;
+        expect(images).toBeDefined();
+        expect(images).toHaveLength(2);
+        expect(images![0]).toMatchObject({ alt_text: "Architecture Overview", caption: "Architecture diagram", page: 1, section: "Page 1" });
+        expect(images![1]).toMatchObject({ alt_text: "Data Flow", page: 2, section: "Page 2" });
+        expect(typeof images![0]!.resource_uri).toBe("string");
+        expect((images![0]!.resource_uri as string)).toContain("kb://artifact/");
+      });
+    });
+
+    test("includes visual context in search results for artifacts with images", async () => {
+      await withRuntime(async (rt, dir) => {
+        await seedProject(rt);
+        await rt.configureSourceRoot({ id: "visual-search", project_id: "proj-1", relative_path: "visual-s", actor: "agent:test" });
+        await writeFile(join(dir, "visual-s", "spec.md"), [
+          "# Deployment Spec",
+          "",
+          "## Page 1",
+          "",
+          "The production cluster uses Kubernetes for orchestration.",
+          "",
+          "![K8s Cluster Topology](./assets/k8s.png)",
+          "",
+        ].join("\n"), "utf8");
+
+        await rt.ingestInventory("visual-search", "agent:test");
+        const results = await rt.search("Kubernetes orchestration");
+        expect(results.length).toBeGreaterThan(0);
+        const hit = results[0]!;
+        expect(hit.visual_context).toBeDefined();
+        expect(hit.visual_context).toHaveLength(1);
+        expect(hit.visual_context![0]!.alt_text).toBe("K8s Cluster Topology");
+        expect(hit.visual_context![0]!.page).toBe(1);
+        expect(hit.visual_context![0]!.resource_uri).toMatch(/^kb:\/\/artifact\//);
+      });
+    });
+
+    test("no-image documents are backward compatible in search", async () => {
+      await withRuntime(async (rt, dir) => {
+        await seedProject(rt);
+        await rt.configureSourceRoot({ id: "noimg", project_id: "proj-1", relative_path: "noimg-in", actor: "agent:test" });
+        await writeFile(join(dir, "noimg-in", "plain.md"), "# Plain Document\n\nJust text, no images.\n", "utf8");
+
+        await rt.ingestInventory("noimg", "agent:test");
+        const results = await rt.search("Plain Document");
+        expect(results.length).toBeGreaterThan(0);
+        expect(results[0]!.visual_context).toBeUndefined();
+        expect(results[0]!.snippet).toContain("Just text");
+      });
+    });
+
+    test("reads image metadata via kb:// resource URI without exposing file paths", async () => {
+      await withRuntime(async (rt, dir) => {
+        await seedProject(rt);
+        await rt.configureSourceRoot({ id: "img-res", project_id: "proj-1", relative_path: "img-r", actor: "agent:test" });
+        await writeFile(join(dir, "img-r", "photo.md"), [
+          "# Field Report",
+          "",
+          "## Slide 1",
+          "",
+          "Site photo from the survey.",
+          "",
+          "![Site Survey Photo](./photos/site.jpg)",
+          "",
+        ].join("\n"), "utf8");
+
+        const ingestion = await rt.ingestInventory("img-res", "agent:test");
+        const artifactId = ingestion.registered_artifact_ids[0]!;
+        const imageResult = await rt.readResource(`kb://artifact/${encodeURIComponent(artifactId)}/image/0`);
+        expect(imageResult.text).toContain("Site Survey Photo");
+        expect(imageResult.text).toContain(`kb://artifact/${encodeURIComponent(artifactId)}/image/0`);
+        expect(imageResult.text).not.toContain("/photos/site.jpg");
+        expect(imageResult.title).toContain("image 0");
+      });
+    });
+
+    test("gracefully no-ops with markdown containing no images", async () => {
+      await withRuntime(async (rt, dir) => {
+        await seedProject(rt);
+        await rt.configureSourceRoot({ id: "empty-img", project_id: "proj-1", relative_path: "empty-in", actor: "agent:test" });
+        await writeFile(join(dir, "empty-in", "links.md"), [
+          "# Links Only",
+          "",
+          "Just a [markdown link](https://example.com) and some **bold text**.",
+          "",
+          "No actual image references here.",
+          "",
+        ].join("\n"), "utf8");
+
+        const ingestion = await rt.ingestInventory("empty-img", "agent:test");
+        const artifact = (await rt.get(ingestion.registered_artifact_ids[0]!))!.record;
+        const images = artifact.image_associations as Array<unknown> | undefined;
+        expect(images).toBeDefined();
+        expect(images).toHaveLength(0);
+      });
+    });
+  });
 });

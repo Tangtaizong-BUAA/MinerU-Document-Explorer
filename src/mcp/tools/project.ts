@@ -45,8 +45,18 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
   }, async ({ query, top_k, include_unverified }) => {
     if (include_unverified && profile !== "project-admin") return { content: [{ type: "text", text: "include_unverified requires project-admin." }], isError: true };
     const results = (await runtime.search(query, top_k, include_unverified)).filter(item => visibleTo(item.record, profile));
-    const rows = results.map(item => ({ id: item.record.id, title: item.record.title, type: item.record.type, status: item.record.status, score: item.score, snippet: item.snippet, uri: `kb://record/${encodeURIComponent(item.record.id)}` }));
-    return textResult(rows.length ? rows.map(row => `${row.id} [${row.score}] ${row.title}\n${row.snippet}`).join("\n\n") : "No results.", { results: rows });
+    const rows = results.map(item => {
+      const base = { id: item.record.id, title: item.record.title, type: item.record.type, status: item.record.status, score: item.score, snippet: item.snippet, uri: `kb://record/${encodeURIComponent(item.record.id)}` };
+      const withVisual = item.visual_context?.length ? { ...base, visual_context: item.visual_context } : base;
+      return withVisual;
+    });
+    const textParts = rows.map(row => {
+      const visualHint = "visual_context" in row && Array.isArray(row.visual_context) && row.visual_context.length > 0
+        ? `\n[visual: ${row.visual_context.map((vc: { alt_text?: string; resource_uri: string }) => vc.alt_text ?? vc.resource_uri).join(", ")}]`
+        : "";
+      return `${row.id} [${row.score}] ${row.title}\n${row.snippet}${visualHint}`;
+    });
+    return textResult(textParts.length ? textParts.join("\n\n") : "No results.", { results: rows });
   });
 
   server.registerTool("kb_outline", {
