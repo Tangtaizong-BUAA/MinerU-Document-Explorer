@@ -29,6 +29,7 @@ const TYPE_RULES: Record<string, { statuses: string[]; required: string[] }> = {
   issue: { statuses: ["open", "in_progress", "blocked", "resolved", "closed"], required: ["severity", "owner", "description"] },
   memory: { statuses: ["candidate", "validating", "quarantined", "accepted", "rejected", "disputed", "superseded"], required: ["kind", "statement", "scope", "source_work_id"] },
   validation_event: { statuses: ["completed", "failed"], required: ["subject_ref", "policy_id", "policy_version", "input_hash", "decision", "reason_codes", "trace_id"] },
+  ingestion_job: { statuses: ["queued", "running", "completed", "failed", "quarantined"], required: ["operation", "request_hash"] },
 };
 
 function present(value: unknown): boolean {

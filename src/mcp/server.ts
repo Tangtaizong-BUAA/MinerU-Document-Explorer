@@ -66,7 +66,7 @@ export async function createMcpServer(store: QMDStore, options: ProjectMcpOption
     if (!projectRoot) throw new Error("CYJ_KB_ROOT or projectDataDir is required for a project MCP profile");
     const runtime = new ProjectRuntime(projectRoot);
     await runtime.initialize();
-    registerProjectResource(server, runtime);
+    registerProjectResource(server, runtime, profile);
     registerProjectTools(server, runtime, profile);
     return server;
   }

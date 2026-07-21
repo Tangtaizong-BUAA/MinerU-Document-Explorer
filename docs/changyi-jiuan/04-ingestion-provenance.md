@@ -64,7 +64,7 @@ Manifest 文件本身需要版本化。绝对路径、密钥和临时下载 URL 
 
 ### 3.1 首期安全入口
 
-`CYJ_KB_ROOT/ingestion/source-roots.yaml` 是 Agent 可调用摄取入口的唯一根目录配置。每个 `relative_path` 必须相对 `CYJ_KB_ROOT`；调用方不能传入文件系统路径，也不能通过符号链接跳出该根目录。
+`CYJ_KB_ROOT/ingestion/source-roots.yaml` 是 Agent 可调用摄取入口的唯一根目录配置。项目管理员可通过 `kb_configure_source_root` 写入该配置；每个 `relative_path` 必须相对 `CYJ_KB_ROOT`，且不能等于项目根本身。调用方不能传入文件系统路径，也不能通过符号链接跳出该根目录。
 
 ```yaml
 source_roots:
@@ -73,7 +73,7 @@ source_roots:
     relative_path: incoming
 ```
 
-当前实现的 `kb_ingest` 支持本地只读 `inventory` 和基于 SHA-256 的 `ingest` 登记。登记后，`project-admin` 可用 `kb_parse_artifact` 将单个已登记 PDF 交给 MinerU API：凭据只从 `MINERU_API_KEY` 或受控 QMD 配置读取，不接受 MCP 请求传入；每次外发均写入审计，原件不会被改写。非 PDF、未登记 artifact、未配置凭据或解析失败都会明确返回失败，不能静默改走其他云服务。
+当前实现的 `kb_ingest` 支持本地只读 `inventory` 和基于 SHA-256 的 `ingest` 登记。登记后，`project-admin` 可用 `kb_parse_artifact` 将单个已登记的 PDF、图片、Word、PPT 或表格交给 MinerU API：凭据只从 `MINERU_API_KEY` 或受控 QMD 配置读取，不接受 MCP 请求传入；每次外发均写入审计，原件不会被改写。未登记、不受支持、未配置凭据或解析失败都会明确返回失败，不能静默改走其他云服务。
 
 ## 4. 摄取状态机
 

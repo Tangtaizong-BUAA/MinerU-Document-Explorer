@@ -117,6 +117,10 @@ describe("ProjectRuntime", () => {
         expect(mem!.record.status).toBe("quarantined");
         expect(mem!.record.kind).toBe("lesson");
 
+        const reconciled = await rt.reconcileMemory({ memory_id: quarantinedId, action: "add_evidence", rationale: "Added an independent trace", evidence_refs: ["log:independent-observation"], actor: ACTOR });
+        expect(reconciled.status).toBe("accepted");
+        expect((await rt.get(quarantinedId))!.record.status).toBe("accepted");
+
         const workId2 = await startWorkFor(rt);
         const result2 = await rt.finishWork({
           work_id: workId2, outcome: "completed", summary: "Rejection test",
@@ -235,14 +239,8 @@ describe("ProjectRuntime", () => {
     test("inventories a configured relative root and registers idempotent artifacts", async () => {
       await withRuntime(async (rt, dir) => {
         await seedProject(rt);
-        await mkdir(join(dir, "incoming"));
+        await rt.configureSourceRoot({ id: "synthetic-source", project_id: "proj-1", relative_path: "incoming", actor: "agent:test" });
         await writeFile(join(dir, "incoming", "notes.md"), "# Synthetic notes\n", "utf8");
-        await writeFile(join(dir, "ingestion", "source-roots.yaml"), [
-          "source_roots:",
-          "  - id: synthetic-source",
-          "    project_id: proj-1",
-          "    relative_path: incoming",
-        ].join("\n"), "utf8");
 
         const inventory = await rt.inventory("synthetic-source");
         expect(inventory.files).toHaveLength(1);
@@ -255,6 +253,23 @@ describe("ProjectRuntime", () => {
         const second = await rt.ingestInventory("synthetic-source", "agent:test");
         expect(second.registered_artifact_ids).toHaveLength(0);
         expect(second.unchanged_artifact_ids).toEqual(first.registered_artifact_ids);
+
+        await rt.upsertRecord({
+          id: "evidence:cyj:notes", type: "evidence", title: "Synthetic note evidence", status: "verified", project_id: "proj-1", created_by: ACTOR,
+          artifact_id: first.registered_artifact_ids[0], locator: "line:1", content_fingerprint: "synthetic-fingerprint",
+        });
+        await rt.upsertRecord({
+          id: "claim:cyj:notes", type: "claim", title: "Synthetic supported claim", status: "supported", project_id: "proj-1", created_by: ACTOR,
+          kind: "fact", statement: "Synthetic notes support the claim", evidence_refs: ["evidence:cyj:notes"], source_refs: ["evidence:cyj:notes"],
+        });
+
+        await writeFile(join(dir, "incoming", "notes.md"), "# Synthetic notes revised\n", "utf8");
+        const revised = await rt.ingestInventory("synthetic-source", "agent:test");
+        expect(revised.stale_artifact_ids).toEqual(first.registered_artifact_ids);
+        expect(revised.registered_artifact_ids).toHaveLength(1);
+        expect((await rt.get(first.registered_artifact_ids[0]!))!.record.status).toBe("stale");
+        expect((await rt.get("evidence:cyj:notes"))!.record.status).toBe("stale");
+        expect((await rt.get("claim:cyj:notes"))!.record.status).toBe("disputed");
       });
     });
   });
@@ -287,6 +302,46 @@ describe("ProjectRuntime", () => {
           else process.env.MINERU_API_KEY = originalKey;
           resetDocReadingConfig();
         }
+      });
+    });
+  });
+
+  describe("Agent bootstrap", () => {
+    test("creates a project once and a dedicated source root without accepting the data root itself", async () => {
+      await withRuntime(async (rt) => {
+        const first = await rt.bootstrapProject({ project_id: "project:cyj:bootstrap", title: "Bootstrap", mission: "Create durable project records", actor: "agent:test" });
+        const second = await rt.bootstrapProject({ project_id: "project:cyj:bootstrap", title: "Bootstrap", mission: "Create durable project records", actor: "agent:test" });
+        expect(first.created).toBe(true);
+        expect(second.created).toBe(false);
+        await expect(rt.configureSourceRoot({ id: "bad-root", project_id: first.project_id, relative_path: ".", actor: "agent:test" })).rejects.toThrow("dedicated subdirectory");
+      });
+    });
+  });
+
+  describe("derived artifact resources", () => {
+    test("reads a normalized artifact page by stable kb URI without exposing a file path", async () => {
+      await withRuntime(async (rt, dir) => {
+        await seedProject(rt);
+        await mkdir(join(dir, "normalized", "artifact_cyj_demo"), { recursive: true });
+        await writeFile(join(dir, "normalized", "artifact_cyj_demo", "document.md"), "# Demo\n\n## Page 1\n\nFirst page.\n\n## Page 2\n\nSecond page.\n", "utf8");
+        await rt.upsertRecord({
+          id: "artifact:cyj:demo", type: "artifact", title: "Demo PDF", status: "parsed", project_id: "proj-1", created_by: ACTOR,
+          mime_type: "application/pdf", size_bytes: 1, sha256: "demo", original_relative_path: "demo.pdf", acquired_at: "2026-01-01T00:00:00.000Z", normalized_markdown_path: "normalized/artifact_cyj_demo/document.md",
+        });
+        const page = await rt.readResource("kb://artifact/artifact%3Acyj%3Ademo/page/2");
+        expect(page.text).toContain("Second page.");
+        expect(page.text).not.toContain("First page.");
+      });
+    });
+  });
+
+  describe("confidentiality boundary", () => {
+    test("refuses a restricted resource under the default profile ceiling", async () => {
+      await withRuntime(async (rt) => {
+        await seedProject(rt);
+        await rt.upsertRecord({ id: "risk:cyj:restricted", type: "risk", title: "Restricted", status: "open", project_id: "proj-1", created_by: ACTOR, confidentiality: "restricted", probability: "high", impact: "high", owner: ACTOR, mitigation: "restricted" });
+        await expect(rt.readResource("risk:cyj:restricted")).rejects.toThrow("confidentiality scope");
+        expect((await rt.readResource("risk:cyj:restricted", "secret")).title).toBe("Restricted");
       });
     });
   });

@@ -161,7 +161,7 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 用途：让摄取 Agent 在已配置的数据根目录内执行清单、解析、校验和增量索引。
 
-输入：`source_root_id`、相对路径或 glob、`mode: inventory/ingest/retry`、可选解析策略和幂等键。
+输入：预配置 `source_root_id` 与 `mode: inventory/ingest`。调用方不能提供文件系统路径；登记结果返回 job ID，并在同一路径内容哈希变化时将旧 artifact 标记为 stale。
 
 输出：job ID、发现/登记/接受/隔离/失败数量、manifest/parse report 资源和下一步修复任务。
 
@@ -181,7 +181,7 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 用途：运维 Agent 执行健康检查、隔离队列重试、派生索引重建、备份和恢复验证。
 
-输入：`action: health/retry_quarantined/rebuild_derived/backup/verify_restore`、scope、dry-run 和幂等键。
+输入：`action: health/lint/retry_failed_parses`、dry-run 和最大批次。`retry_failed_parses` 默认 dry-run，只有显式执行才会重试 MinerU API 作业。
 
 危险动作默认使用 dry-run；正式执行仍必须满足服务端策略。原件物理删除、accepted 历史删除和审计清空不属于工具能力。
 

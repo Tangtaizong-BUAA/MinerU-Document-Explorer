@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Extract per-page text from a PDF using the MinerU cloud SDK (mineru-open-sdk).
+Extract Markdown and addressable content from a MinerU-supported document using
+the MinerU cloud SDK (mineru-open-sdk).
 
 Usage:
     MINERU_API_KEY=... extract_pdf_mineru.py <filepath>

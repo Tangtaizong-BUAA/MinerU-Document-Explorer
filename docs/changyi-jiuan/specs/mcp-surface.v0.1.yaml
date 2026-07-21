@@ -25,7 +25,7 @@ profiles:
   project-admin:
     purpose: agent-managed ingestion, reconciliation, rebuild, and operations
     extends: project-maintain
-    tools: [kb_ingest, kb_parse_artifact, kb_reconcile_memory, kb_maintain]
+    tools: [kb_bootstrap_project, kb_configure_source_root, kb_ingest, kb_parse_artifact, kb_reconcile_memory, kb_maintain]
 
 resource_templates:
   - "kb://project/{project_id}/brief"
@@ -37,6 +37,23 @@ resource_templates:
   - "kb://memory/{memory_id}"
 
 tools:
+  kb_bootstrap_project:
+    profile: project-admin
+    read_only: false
+    idempotency_key: project_id
+    required_input: [project_id, title, mission]
+    rules:
+      - "creates canonical Markdown project record only once"
+
+  kb_configure_source_root:
+    profile: project-admin
+    read_only: false
+    idempotency_key: id
+    required_input: [id, project_id, relative_path]
+    rules:
+      - "absolute paths and CYJ_KB_ROOT itself are forbidden"
+      - "configured root must remain under CYJ_KB_ROOT"
+
   kb_brief:
     profile: project-read
     read_only: true
@@ -144,7 +161,7 @@ tools:
     idempotency_key: "artifact_id + input_sha256 + mineru_api_policy_version"
     required_input: [artifact_id]
     rules:
-      - "registered artifact must be a PDF under a configured source root"
+      - "registered artifact must be a MinerU-supported PDF, image, Office, or spreadsheet file under a configured source root"
       - "MinerU credentials must be configured outside MCP input"
       - "each API egress attempt is appended to the audit log"
       - "failed parsing must not modify the original file"
@@ -166,7 +183,7 @@ tools:
     idempotency_key: "action + scope + request_hash"
     required_input: [action, request_hash]
     optional_input: [scope, dry_run]
-    actions: [health, retry_quarantined, rebuild_derived, backup, verify_restore]
+    actions: [health, lint, retry_failed_parses]
     defaults:
       dry_run: true
     rules:
