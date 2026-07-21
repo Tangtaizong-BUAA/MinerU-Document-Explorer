@@ -45,4 +45,14 @@ describe("Changyi Jiuan MCP profiles", () => {
     expect(toolNames(server)).toContain("kb_finish_work");
     expect(toolNames(server)).not.toContain("query");
   });
+
+  it("reserves source ingestion for the admin profile", async () => {
+    const server = await createMcpServer({} as never, {
+      projectProfile: "project-admin",
+      projectDataDir: await projectRoot(),
+    });
+
+    expect(toolNames(server)).toContain("kb_ingest");
+    expect(toolNames(server)).toContain("kb_maintain");
+  });
 });

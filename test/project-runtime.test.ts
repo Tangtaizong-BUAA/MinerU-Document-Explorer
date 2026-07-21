@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProjectRuntime } from "../src/project/runtime.js";
@@ -226,6 +226,34 @@ describe("ProjectRuntime", () => {
 
         const issues = await rt.lint("project:cyj:main");
         expect(issues).toContainEqual(expect.objectContaining({ code: "supported_claim_missing_evidence", record_id: "claim:cyj:unsupported" }));
+      });
+    });
+  });
+
+  describe("local-only source inventory", () => {
+    test("inventories a configured relative root and registers idempotent artifacts", async () => {
+      await withRuntime(async (rt, dir) => {
+        await seedProject(rt);
+        await mkdir(join(dir, "incoming"));
+        await writeFile(join(dir, "incoming", "notes.md"), "# Synthetic notes\n", "utf8");
+        await writeFile(join(dir, "ingestion", "source-roots.yaml"), [
+          "source_roots:",
+          "  - id: synthetic-source",
+          "    project_id: proj-1",
+          "    relative_path: incoming",
+        ].join("\n"), "utf8");
+
+        const inventory = await rt.inventory("synthetic-source");
+        expect(inventory.files).toHaveLength(1);
+        expect(inventory.files[0]).toMatchObject({ relative_path: "notes.md", mime_type: "text/markdown" });
+
+        const first = await rt.ingestInventory("synthetic-source", "agent:test");
+        expect(first.registered_artifact_ids).toHaveLength(1);
+        expect((await rt.get(first.registered_artifact_ids[0]!))!.record.original_relative_path).toBe("notes.md");
+
+        const second = await rt.ingestInventory("synthetic-source", "agent:test");
+        expect(second.registered_artifact_ids).toHaveLength(0);
+        expect(second.unchanged_artifact_ids).toEqual(first.registered_artifact_ids);
       });
     });
   });

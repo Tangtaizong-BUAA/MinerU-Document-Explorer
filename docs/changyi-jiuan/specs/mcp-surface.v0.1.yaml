@@ -131,11 +131,12 @@ tools:
     idempotency_key: "source_root_id + request_hash"
     required_input: [source_root_id, mode, request_hash]
     optional_input: [relative_paths, glob, parser_policy]
-    modes: [inventory, ingest, retry]
+    modes: [inventory, ingest]
     rules:
       - "absolute paths are forbidden"
       - "source_root_id must be preconfigured"
       - "cloud parsing requires an enabled egress policy"
+      - "current implementation is local inventory and artifact registration only"
 
   kb_reconcile_memory:
     profile: project-admin

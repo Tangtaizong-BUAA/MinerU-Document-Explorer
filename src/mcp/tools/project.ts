@@ -122,6 +122,25 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
 
   if (profile !== "project-admin") return;
 
+  server.registerTool("kb_ingest", {
+    title: "Inventory or Register Project Sources",
+    description: "Perform a local-only inventory or artifact registration from a preconfigured source root. Paths are never accepted from callers and MinerU parsing is not triggered in this phase.",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    inputSchema: { source_root_id: z.string(), mode: z.enum(["inventory", "ingest"]) },
+  }, async ({ source_root_id, mode }) => {
+    try {
+      if (mode === "inventory") {
+        const inventory = await runtime.inventory(source_root_id);
+        const output = { source_root_id, project_id: inventory.project_id, file_count: inventory.files.length, files: inventory.files };
+        return textResult(YAMLish(output, 1000), output);
+      }
+      const output = await runtime.ingestInventory(source_root_id, `agent:${profile}`);
+      return textResult(`Registered ${output.registered_artifact_ids.length} artifact(s); ${output.unchanged_artifact_ids.length} unchanged.`, output);
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  });
+
   server.registerTool("kb_maintain", {
     title: "Project Health",
     description: "Return Agent-operable project runtime health. Phase 1 exposes health only; destructive maintenance is intentionally absent.",

@@ -62,6 +62,19 @@ ingest_status: registered
 
 Manifest 文件本身需要版本化。绝对路径、密钥和临时下载 URL 不进入正式记录。
 
+### 3.1 首期安全入口
+
+`CYJ_KB_ROOT/ingestion/source-roots.yaml` 是 Agent 可调用摄取入口的唯一根目录配置。每个 `relative_path` 必须相对 `CYJ_KB_ROOT`；调用方不能传入文件系统路径，也不能通过符号链接跳出该根目录。
+
+```yaml
+source_roots:
+  - id: historical-materials
+    project_id: project:cyj:main
+    relative_path: incoming
+```
+
+当前实现的 `kb_ingest` 先支持本地只读 `inventory` 和基于 SHA-256 的 `ingest` 登记。它不会调用 MinerU、不会上传文件，也不会删除或改写原件；解析、重试队列与派生 Markdown 在后续受策略控制的阶段接入。
+
 ## 4. 摄取状态机
 
 ```text

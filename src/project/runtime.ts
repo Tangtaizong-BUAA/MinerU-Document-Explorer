@@ -8,10 +8,11 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import YAML from "yaml";
 import { validateProjectRecords, type ValidationIssue } from "./validation.js";
 import { buildProjectView, PROJECT_VIEW_KINDS, type ProjectViewKind } from "./views.js";
+import { inventorySourceRoot, parseSourceRoots, type InventoryEntry, type SourceRoot } from "./ingestion.js";
 
 export type ProjectProfile = "upstream-full" | "project-read" | "project-maintain" | "project-admin";
 export type MemoryKind = "fact" | "decision" | "procedure" | "lesson" | "constraint" | "preference" | "open_question";
@@ -125,7 +126,7 @@ export class ProjectRuntime {
   constructor(root: string) { this.root = root; }
 
   async initialize(): Promise<void> {
-    await Promise.all(["registry", "memory", "events", "audit"].map(dir => mkdir(join(this.root, dir), { recursive: true })));
+    await Promise.all(["registry", "memory", "events", "audit", "ingestion"].map(dir => mkdir(join(this.root, dir), { recursive: true })));
   }
 
   private directoryFor(record: KnowledgeRecord): string {
@@ -375,6 +376,40 @@ export class ProjectRuntime {
     const records = (await this.records()).map(item => item.record);
     const scoped = projectId ? records.filter(record => record.project_id === projectId || record.id === projectId) : records;
     return validateProjectRecords(scoped);
+  }
+
+  private async sourceRoots(): Promise<SourceRoot[]> {
+    try {
+      return parseSourceRoots(await readFile(join(this.root, "ingestion", "source-roots.yaml"), "utf8"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new Error("No configured source roots. Add ingestion/source-roots.yaml under CYJ_KB_ROOT first.");
+      throw error;
+    }
+  }
+
+  async inventory(sourceRootId: string): Promise<{ source_root_id: string; project_id: string; files: InventoryEntry[] }> {
+    const sourceRoot = (await this.sourceRoots()).find(root => root.id === sourceRootId && root.enabled);
+    if (!sourceRoot) throw new Error(`Unknown or disabled source root: ${sourceRootId}`);
+    return { source_root_id: sourceRoot.id, project_id: sourceRoot.project_id, files: await inventorySourceRoot(this.root, sourceRoot) };
+  }
+
+  async ingestInventory(sourceRootId: string, actor: string): Promise<{ source_root_id: string; registered_artifact_ids: string[]; unchanged_artifact_ids: string[] }> {
+    const inventory = await this.inventory(sourceRootId);
+    const registered: string[] = [];
+    const unchanged: string[] = [];
+    for (const file of inventory.files) {
+      const id = `artifact:cyj:${file.sha256.slice(0, 24)}`;
+      const existing = await this.get(id);
+      if (existing?.record.sha256 === file.sha256 && existing.record.status !== "stale") { unchanged.push(id); continue; }
+      await this.upsertRecord({
+        id, type: "artifact", title: file.relative_path, status: "registered", project_id: inventory.project_id, created_by: actor,
+        mime_type: file.mime_type, size_bytes: file.size_bytes, sha256: file.sha256, original_relative_path: file.relative_path,
+        acquired_at: file.modified_at, source_root_id: sourceRootId, parser_status: "not_requested", source_refs: [],
+      }, `# ${file.relative_path}\n\nInventory-only registration. No MinerU parsing has been requested.\n`);
+      registered.push(id);
+    }
+    await this.appendAudit({ type: "inventory_ingest", source_root_id: sourceRootId, actor, registered_artifact_ids: registered, unchanged_artifact_ids: unchanged });
+    return { source_root_id: sourceRootId, registered_artifact_ids: registered, unchanged_artifact_ids: unchanged };
   }
 
   async readResource(uriOrId: string): Promise<{ uri: string; title: string; text: string }> {
