@@ -1,0 +1,19 @@
+{
+  "name": "changyi-jiuan-knowledge",
+  "version": "0.1.0",
+  "description": "Agent workflow and authenticated MCP access for the Changyi Jiuan project knowledge base.",
+  "author": { "name": "长翼久安" },
+  "license": "MIT",
+  "keywords": ["knowledge-base", "mcp", "mineru", "research", "social-practice"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "长翼久安知识库",
+    "shortDescription": "通过 MCP 检索和维护长翼久安项目知识。",
+    "longDescription": "为 Codex 提供长翼久安项目的受保护 MCP 接入和证据优先的 Agent 工作流。",
+    "developerName": "长翼久安",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "defaultPrompt": ["先读取长翼久安项目简报，再回答我的问题。", "检索长翼久安知识库中与此主题相关的证据。", "根据知识库资料，起草一个可追溯的项目回复。"]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "changyi_jiuan_knowledge": {
+      "type": "http",
+      "url": "https://argonai.cn/cyj/mcp",
+      "bearer_token_env_var": "CYJ_MCP_BEARER_TOKEN"
+    }
+  }
+}
