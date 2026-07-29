@@ -132,7 +132,25 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 该工具只创建工作记录，不授予额外文件或知识写权限。
 
-### 3.7 `kb_finish_work`
+### 3.7 `kb_publish_resource`
+
+用途：让 Agent 将当前工作中生成的长期项目资源直接上传到服务器，并自动登记来源、内容哈希、工作项和保密等级。小型 Markdown、文本、JSON 和 CSV 会立即规范化并加入检索；PDF、Office 和图片登记后可继续调用 MinerU 解析。
+
+输入：`work_id` 与资源标题、文件名、MIME、编码、正文、资源类型、来源引用和保密等级。内联上传设置严格字节上限；大型文件继续使用预配置 source root，避免把二进制内容编码为大量 token。
+
+输出：artifact ID、哈希、大小、稳定 `kb://` URI、是否已可搜索以及是否支持 MinerU。
+
+Agent 资源是持久材料但不是自动验证的事实证据。工具拒绝凭据/私钥特征、可执行文件、未知 MIME、越界文件名和已关闭工作项。
+
+### 3.8 `kb_capture_context`
+
+用途：在长对话或长任务的关键节点，把会影响未来回答和行动的信息提炼为结构化知识候选，而不是上传原始聊天记录。
+
+支持类型：fact、decision、procedure、lesson、constraint、preference、open_question。每条包含 statement、精确 scope、evidence refs 和置信度。用户决策、约束和偏好需要 `user:` 来源；事实和经验受证据、冲突和独立性策略约束。
+
+输出逐条列出自动晋升、隔离、拒绝和 validation event。相同工作项与相同内容重复提交是幂等的。
+
+### 3.9 `kb_finish_work`
 
 用途：幂等提交工作结果并关闭工作项。
 
@@ -142,7 +160,8 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 - `outcome`: `completed/partial/failed/cancelled`；
 - 摘要；
 - artifacts 和哈希；
-- claims、decisions、lessons；
+- claims、decisions、lessons 和通用 knowledge updates；
+- 尚未单独上传的 generated resources；
 - unresolved issues；
 - evidence refs；
 - `result_hash`。
@@ -157,7 +176,7 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 同一 `work_id + result_hash` 重试必须返回同一结果。
 
-### 3.8 `kb_ingest`
+### 3.10 `kb_ingest`
 
 用途：让摄取 Agent 在已配置的数据根目录内执行清单、解析、校验和增量索引。
 
@@ -167,7 +186,7 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 禁止任意绝对路径、未授权云外发和原地修改原件。
 
-### 3.9 `kb_reconcile_memory`
+### 3.11 `kb_reconcile_memory`
 
 用途：治理 Agent 为 `quarantined/disputed` 记忆补充证据、限定作用域、提交取代关系或请求重新校验。
 
@@ -177,7 +196,7 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 该工具不能指定最终接受结果；不存在 `force_accept`。
 
-### 3.10 `kb_maintain`
+### 3.12 `kb_maintain`
 
 用途：运维 Agent 执行健康检查、隔离队列重试、派生索引重建、备份和恢复验证。
 

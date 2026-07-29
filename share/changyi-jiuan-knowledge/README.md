@@ -17,7 +17,7 @@ bash scripts/install-mcp.sh
 
 脚本会静默要求输入令牌，将 `changyi_jiuan_knowledge` 注册为全局 Codex MCP，并设置当前 macOS 登录会话所需的环境变量。
 
-4. 重启 Codex App，打开一个新任务。先让 Agent 调用 `kb_brief`，随后可用 `kb_search`、`kb_read`、`kb_outline` 与 `kb_view`。
+4. 重启 Codex App，打开一个新任务。Agent 会先调用 `kb_brief`，在项目工作中用 `kb_publish_resource` 自动归档产物，并用 `kb_capture_context` 把对话中形成的长期信息提炼进知识库。
 
 也可以直接把 [PROMPT-FOR-CODEX.md](PROMPT-FOR-CODEX.md) 连同本文件夹交给 Codex。
 
@@ -33,6 +33,13 @@ bash scripts/install-mcp.sh
 检索默认返回最小必要的文本证据。若 MinerU 输出的 Markdown 含有图片引用，`kb_search` 会附带紧凑 `visual_context`：页/幻灯片、章节、图片替代文字或说明、KB 资源 URI；不会默认传输图片字节。
 
 现有首批导入资料尚无 MinerU 图片引用，因此不会立即返回图片上下文。要补齐旧资料的图文关联，需要以包含图片资产的 MinerU 输出重新解析并导入。
+
+## 自动维护闭环
+
+- 每个长翼久安相关任务先创建 `work_id`。
+- Agent 生成的 Markdown、报告、方案、表格、代码、图片或文档通过 MCP 上传到服务器；小型文本立即进入搜索，二进制文档可继续交给 MinerU 解析。
+- 对话中形成的事实、决策、约束、偏好、经验和开放问题会被精炼为结构化候选知识。服务器依据证据、用户指令和冲突策略自动接受、隔离或拒绝。
+- 系统不保存整段聊天，也不会把 Agent 自己生成的草稿自动当作事实证据。
 
 ## 卸载
 

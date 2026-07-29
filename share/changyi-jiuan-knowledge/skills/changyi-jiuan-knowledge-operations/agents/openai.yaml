@@ -1,6 +1,6 @@
 interface:
-  display_name: "Changyi Jiuan Knowledge Operations"
-  short_description: "Persist project resources and distilled knowledge"
+  display_name: "长翼久安知识库操作"
+  short_description: "自动归档资源并提炼长期项目知识"
   default_prompt: "Use $changyi-jiuan-knowledge-operations to retrieve context, persist my outputs, and capture durable project knowledge."
 dependencies:
   tools:

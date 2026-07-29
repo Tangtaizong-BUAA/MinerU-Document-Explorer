@@ -2,10 +2,22 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ProjectRuntime, type ProjectProfile } from "../../project/runtime.js";
+import { ProjectRuntime, type ProjectProfile, type PublishedResource } from "../../project/runtime.js";
 import { PROJECT_VIEW_KINDS } from "../../project/views.js";
 
 const recordFilters = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional();
+const memoryKind = z.enum(["fact", "decision", "procedure", "lesson", "constraint", "preference", "open_question"]);
+const memoryUpdate = z.object({
+  kind: memoryKind, statement: z.string().min(8).max(4000), scope: z.string().min(1).max(240),
+  evidence_refs: z.array(z.string()).max(50).optional(), confidence: z.number().min(0).max(1).optional(),
+});
+const generatedResource = z.object({
+  title: z.string().min(1).max(240), filename: z.string().min(1).max(180),
+  content_type: z.enum(["text/markdown", "text/plain", "text/csv", "application/json", "application/yaml", "text/yaml", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/jp2"]),
+  encoding: z.enum(["utf8", "base64"]).optional().default("utf8"), content: z.string().min(1).max(900_000),
+  kind: z.enum(["note", "report", "deliverable", "dataset", "code", "image", "document"]),
+  source_refs: z.array(z.string()).max(50).optional(), confidentiality: z.enum(["public", "internal", "restricted"]).optional().default("internal"),
+});
 const visibleTo = (record: { confidentiality?: unknown }, profile: ProjectProfile) => profile === "project-admin" || record.confidentiality !== "restricted" && record.confidentiality !== "secret";
 const maximumConfidentiality = (profile: ProjectProfile) => profile === "project-admin" ? "secret" as const : "internal" as const;
 
@@ -104,7 +116,7 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
 
   server.registerTool("kb_start_work", {
     title: "Start Project Work",
-    description: "Create a durable Agent work item. The service identity is supplied by the server profile, not by an untrusted document.",
+    description: "Create a durable Agent work item. Call this before project-related work so generated resources and distilled conversation knowledge can be persisted automatically.",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     inputSchema: { project_id: z.string(), objective: z.string().min(3), expected_outputs: z.array(z.string()).min(1), acceptance_criteria: z.array(z.string()).min(1), input_refs: z.array(z.string()).optional() },
   }, async ({ project_id, objective, expected_outputs, acceptance_criteria, input_refs }) => {
@@ -112,9 +124,37 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     return textResult(`Started ${result.work_id}`, result);
   });
 
+  server.registerTool("kb_publish_resource", {
+    title: "Publish Agent Resource",
+    description: "Persist a project-related resource produced by the Agent, bind it to a work item, register provenance, and make inline text searchable immediately. Call whenever a durable report, plan, note, dataset, code file, image, or document is created. Inline uploads are capped; use source ingestion for large files.",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    inputSchema: { work_id: z.string(), resource: generatedResource },
+  }, async ({ work_id, resource }) => {
+    try {
+      const output = await runtime.publishResource({ ...resource, work_id, actor: `agent:${profile}` });
+      return textResult(`Published ${output.artifact_id}; searchable=${output.searchable}.`, output);
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  });
+
+  server.registerTool("kb_capture_context", {
+    title: "Capture Distilled Project Context",
+    description: "Checkpoint durable project knowledge distilled from the ongoing conversation: facts, user decisions, procedures, lessons, constraints, preferences, and open questions. Submit concise statements and evidence references, never a raw transcript. Server policy promotes, quarantines, or rejects each update.",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    inputSchema: { work_id: z.string(), summary: z.string().min(3).max(1000), updates: z.array(memoryUpdate).min(1).max(30) },
+  }, async ({ work_id, summary, updates }) => {
+    try {
+      const output = await runtime.captureContext({ work_id, summary, updates, actor: `agent:${profile}` });
+      return textResult(`Context checkpoint ${output.checkpoint_hash.slice(0, 12)}; promoted=${output.promoted_memory_ids.length}, quarantined=${output.quarantined_memory_ids.length}, rejected=${output.rejected_memory_ids.length}.`, output);
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  });
+
   server.registerTool("kb_finish_work", {
     title: "Finish Project Work",
-    description: "Submit an idempotent closeout. Memory is promoted, quarantined, or rejected by server policy; callers cannot force acceptance.",
+    description: "Submit an idempotent closeout. Include any not-yet-published generated_resources and distilled knowledge_updates; resources are persisted before closeout and memory is governed by server policy.",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     inputSchema: {
       work_id: z.string(), outcome: z.enum(["completed", "partial", "failed", "cancelled"]), summary: z.string().min(1), result_hash: z.string().min(8),
@@ -122,11 +162,16 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
       claims: z.array(z.object({ statement: z.string(), scope: z.string(), evidence_refs: z.array(z.string()).optional(), confidence: z.number().min(0).max(1).optional() })).optional(),
       decisions: z.array(z.object({ statement: z.string(), scope: z.string(), evidence_refs: z.array(z.string()).optional(), confidence: z.number().min(0).max(1).optional() })).optional(),
       lessons: z.array(z.object({ statement: z.string(), scope: z.string(), evidence_refs: z.array(z.string()).optional(), confidence: z.number().min(0).max(1).optional() })).optional(),
+      knowledge_updates: z.array(memoryUpdate).max(30).optional(),
+      generated_resources: z.array(generatedResource).max(10).optional(),
     },
   }, async (input) => {
     try {
-      const result = await runtime.finishWork({ ...input, actor: `agent:${profile}` });
-      return textResult(`Closeout ${result.work_status}; promoted=${result.promoted_memory_ids.length}, quarantined=${result.quarantined_memory_ids.length}, rejected=${result.rejected_memory_ids.length}`, result);
+      const published: PublishedResource[] = [];
+      for (const resource of input.generated_resources ?? []) published.push(await runtime.publishResource({ ...resource, work_id: input.work_id, actor: `agent:${profile}` }));
+      const result = await runtime.finishWork({ ...input, artifacts: [...(input.artifacts ?? []), ...published.map(resource => resource.artifact_id)], actor: `agent:${profile}` });
+      const output = { ...result, published_resources: published };
+      return textResult(`Closeout ${result.work_status}; resources=${published.length}, promoted=${result.promoted_memory_ids.length}, quarantined=${result.quarantined_memory_ids.length}, rejected=${result.rejected_memory_ids.length}`, output);
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
     }

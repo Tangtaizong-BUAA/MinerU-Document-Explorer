@@ -3,8 +3,9 @@
 ## Agent loop
 
 ```text
-brief -> lookup/search -> read only what is needed -> answer or start work
-                                                -> finish work -> policy-controlled memory
+brief -> lookup/search -> read only what is needed -> start work
+      -> publish durable resources + checkpoint distilled context
+      -> finish work -> policy-controlled memory + searchable artifacts
 ```
 
 `kb://record/<id>` is the stable URI for a record. `kb://project/<id>/brief` is the compact project brief. Registered artifacts additionally expose `kb://artifact/<id>` and, after parsing, `kb://artifact/<id>/document` (and page resources where available).
@@ -22,7 +23,9 @@ For work, use an agent-owned lifecycle rather than narrative-only completion:
 
 ```text
 kb_start_work({ project_id, objective, expected_outputs, acceptance_criteria, input_refs })
-kb_finish_work({ work_id, outcome, summary, result_hash, artifacts, evidence_refs, unresolved, claims, decisions, lessons })
+kb_publish_resource({ work_id, resource: { title, filename, content_type, encoding, content, kind, source_refs } })
+kb_capture_context({ work_id, summary, updates: [{ kind, statement, scope, evidence_refs, confidence }] })
+kb_finish_work({ work_id, outcome, summary, result_hash, artifacts, generated_resources, evidence_refs, unresolved, claims, decisions, lessons, knowledge_updates })
 ```
 
 `result_hash` makes closeout idempotent. If the same work ID and hash are submitted again, the server returns the original result. `partial`, `failed`, and `cancelled` outcomes must retain unresolved items instead of being rewritten as success.
@@ -32,7 +35,7 @@ kb_finish_work({ work_id, outcome, summary, result_hash, artifacts, evidence_ref
 | Profile | Intended agent | Capabilities |
 | --- | --- | --- |
 | `project-read` | answering/research sub-agent | compact read-only knowledge tools |
-| `project-maintain` | normal orchestrator | read tools plus `kb_start_work` and `kb_finish_work` |
+| `project-maintain` | normal orchestrator | read tools plus work lifecycle, resource publication, and context capture |
 | `project-admin` | ingestion/governance agent | maintain tools plus bootstrap, source-root configuration, ingestion, MinerU parse, reconciliation, and maintenance |
 
 Normal profiles never receive restricted or secret records and cannot request unverified memory. Use a separate admin connection for source intake and governance.

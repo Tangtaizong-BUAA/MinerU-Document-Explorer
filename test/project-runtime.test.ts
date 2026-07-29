@@ -350,6 +350,85 @@ describe("ProjectRuntime", () => {
     });
   });
 
+  describe("autonomous Agent persistence", () => {
+    test("publishes generated Markdown idempotently, indexes it, and links it at closeout", async () => {
+      await withRuntime(async (rt) => {
+        await seedProject(rt);
+        const workId = await startWorkFor(rt);
+        const input = {
+          work_id: workId, title: "Field coordination note", filename: "field-note.md", content_type: "text/markdown",
+          encoding: "utf8" as const, content: "# Field coordination\n\nThe Pianguan survey requires a local liaison.\n", kind: "note" as const, actor: "agent:test",
+        };
+        const first = await rt.publishResource(input);
+        const second = await rt.publishResource(input);
+        expect(second.artifact_id).toBe(first.artifact_id);
+        expect(first.searchable).toBe(true);
+        expect((await rt.search("Pianguan local liaison"))[0]!.record.id).toBe(first.artifact_id);
+        expect((await rt.readResource(first.resource_uri)).text).toContain("Pianguan survey");
+
+        await rt.finishWork({ work_id: workId, outcome: "completed", summary: "Note captured", result_hash: "resource-closeout-1", actor: ACTOR });
+        const work = (await rt.get(workId))!.record;
+        expect(work.artifacts).toContain(first.artifact_id);
+        expect((await rt.get(first.artifact_id))!.record.source_work_id).toBe(workId);
+      });
+    });
+
+    test("captures distilled conversation knowledge under server policy and is idempotent", async () => {
+      await withRuntime(async (rt) => {
+        await seedProject(rt);
+        const workId = await startWorkFor(rt);
+        const checkpoint = {
+          work_id: workId,
+          summary: "Captured explicit project context from the current conversation",
+          actor: "agent:test",
+          updates: [
+            { kind: "fact" as const, statement: "The next field activity is planned for Pianguan County", scope: "field-plan", evidence_refs: ["artifact:plan-v1"], confidence: 0.8 },
+            { kind: "constraint" as const, statement: "Every durable project output must be persisted through the MCP service", scope: "knowledge-operations", evidence_refs: ["user:conversation:turn-42"], confidence: 1 },
+            { kind: "open_question" as const, statement: "Which team member will own local liaison coordination?", scope: "field-plan", confidence: 0.5 },
+          ],
+        };
+        const first = await rt.captureContext(checkpoint);
+        const second = await rt.captureContext(checkpoint);
+        expect(first.promoted_memory_ids).toHaveLength(3);
+        expect(second.promoted_memory_ids).toEqual(first.promoted_memory_ids);
+        expect(second.validation_event_ids).toEqual(first.validation_event_ids);
+        expect(second.audit_event_id).toBe(first.audit_event_id);
+        expect((await rt.lookup("activity", { kind: "context_checkpoint" }, 10))).toHaveLength(1);
+        const brief = await rt.brief("proj-1") as { accepted_memory: Array<{ statement: string }> };
+        expect(brief.accepted_memory.map(item => item.statement)).toContain("Every durable project output must be persisted through the MCP service");
+        expect((await rt.lint()).filter(issue => issue.severity === "error")).toEqual([]);
+      });
+    });
+
+    test("rejects credentials in generated text and keeps managed binaries eligible for MinerU", async () => {
+      await withRuntime(async (rt) => {
+        await seedProject(rt);
+        const workId = await startWorkFor(rt);
+        await expect(rt.publishResource({
+          work_id: workId, title: "Unsafe note", filename: "unsafe.md", content_type: "text/markdown", encoding: "utf8",
+          content: "credential ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", kind: "note", actor: "agent:test",
+        })).rejects.toThrow("credential");
+
+        const pdf = await rt.publishResource({
+          work_id: workId, title: "Generated PDF", filename: "generated.pdf", content_type: "application/pdf", encoding: "base64",
+          content: Buffer.from("%PDF-synthetic").toString("base64"), kind: "document", actor: "agent:test",
+        });
+        expect(pdf.searchable).toBe(false);
+        expect(pdf.mineru_parse_supported).toBe(true);
+        const originalKey = process.env.MINERU_API_KEY;
+        delete process.env.MINERU_API_KEY;
+        resetDocReadingConfig();
+        try {
+          await expect(rt.parseArtifactWithMinerU(pdf.artifact_id, "agent:test")).rejects.toThrow("MinerU API parsing requires");
+        } finally {
+          if (originalKey === undefined) delete process.env.MINERU_API_KEY;
+          else process.env.MINERU_API_KEY = originalKey;
+          resetDocReadingConfig();
+        }
+      });
+    });
+  });
+
   describe("visual context RAG", () => {
     test("extracts image associations from source markdown during ingestion", async () => {
       await withRuntime(async (rt, dir) => {

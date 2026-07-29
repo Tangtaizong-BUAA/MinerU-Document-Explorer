@@ -8,7 +8,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import YAML from "yaml";
 import { validateProjectRecords, type ValidationIssue } from "./validation.js";
 import { buildProjectView, PROJECT_VIEW_KINDS, type ProjectViewKind } from "./views.js";
@@ -66,6 +66,39 @@ export type MemorySubmission = {
   confidence?: number;
 };
 
+export type PublishResourceInput = {
+  work_id: string;
+  title: string;
+  filename: string;
+  content_type: string;
+  encoding: "utf8" | "base64";
+  content: string;
+  kind: "note" | "report" | "deliverable" | "dataset" | "code" | "image" | "document";
+  actor: string;
+  source_refs?: string[];
+  confidentiality?: Exclude<Confidentiality, "secret">;
+};
+
+export type PublishedResource = {
+  artifact_id: string;
+  work_id: string;
+  status: string;
+  sha256: string;
+  size_bytes: number;
+  resource_uri: string;
+  searchable: boolean;
+  mineru_parse_supported: boolean;
+};
+
+export type CaptureContextResult = {
+  checkpoint_hash: string;
+  promoted_memory_ids: string[];
+  quarantined_memory_ids: string[];
+  rejected_memory_ids: string[];
+  validation_event_ids: string[];
+  audit_event_id: string;
+};
+
 export type FinishWorkInput = {
   work_id: string;
   outcome: "completed" | "partial" | "failed" | "cancelled";
@@ -76,6 +109,7 @@ export type FinishWorkInput = {
   claims?: Omit<MemorySubmission, "kind">[];
   decisions?: Omit<MemorySubmission, "kind">[];
   lessons?: Omit<MemorySubmission, "kind">[];
+  knowledge_updates?: MemorySubmission[];
   unresolved?: string[];
   evidence_refs?: string[];
 };
@@ -113,11 +147,16 @@ const MINERU_MIME_TYPES = new Set([
   "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/jp2",
 ]);
+const INLINE_TEXT_MIME_TYPES = new Set(["text/markdown", "text/plain", "text/csv", "application/json", "application/yaml", "text/yaml"]);
+const PUBLISHABLE_MIME_TYPES = new Set([...INLINE_TEXT_MIME_TYPES, ...MINERU_MIME_TYPES]);
+const MAX_INLINE_RESOURCE_BYTES = 640 * 1024;
 
 function now(): string { return new Date().toISOString(); }
 function digest(value: string): string { return createHash("sha256").update(value).digest("hex"); }
+function digestBytes(value: Uint8Array): string { return createHash("sha256").update(value).digest("hex"); }
 function safeName(id: string): string { return id.replace(/[^A-Za-z0-9._-]/g, "_"); }
 function newId(type: string): string { return `${type}:cyj:${randomUUID().replace(/-/g, "")}`; }
+function uniqueStrings(values: Array<string | undefined>): string[] { return [...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0))]; }
 function confidentialityAllowed(record: KnowledgeRecord, maximum: Confidentiality): boolean {
   const rank: Record<Confidentiality, number> = { public: 0, internal: 1, restricted: 2, secret: 3 };
   return rank[(record.confidentiality ?? "internal") as Confidentiality] <= rank[maximum];
@@ -247,6 +286,8 @@ export class ProjectRuntime {
   }
 
   async startWork(input: { project_id: string; objective: string; expected_outputs: string[]; acceptance_criteria: string[]; actor: string; input_refs?: string[] }): Promise<{ work_id: string; knowledge_version: string; brief_uri: string; closeout_requirements: string[] }> {
+    const project = await this.get(input.project_id);
+    if (!project || project.record.type !== "project") throw new Error(`Unknown project: ${input.project_id}`);
     const workId = newId("work_item");
     const record = await this.upsertRecord({
       id: workId,
@@ -264,7 +305,98 @@ export class ProjectRuntime {
       work_id: record.id,
       knowledge_version: digest(JSON.stringify((await this.records()).map(item => [item.record.id, item.record.updated_at]))).slice(0, 16),
       brief_uri: `kb://project/${encodeURIComponent(input.project_id)}/brief`,
-      closeout_requirements: ["summary", "result_hash", "outcome", "evidence_refs for factual memory"],
+      closeout_requirements: ["publish durable resources", "capture distilled project context", "summary", "result_hash", "outcome", "evidence_refs for factual memory"],
+    };
+  }
+
+  private managedResourcePath(relativePath: string): string {
+    if (isAbsolute(relativePath) || !relativePath.startsWith("agent-resources/")) throw new Error("Managed resources must stay inside agent-resources");
+    const rootPath = resolve(this.root);
+    const target = resolve(rootPath, relativePath);
+    const fromRoot = relative(rootPath, target);
+    if (!fromRoot || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) throw new Error("Managed resource path escapes the knowledge root");
+    return target;
+  }
+
+  private decodePublishedContent(input: PublishResourceInput): Buffer {
+    if (!PUBLISHABLE_MIME_TYPES.has(input.content_type)) throw new Error(`Unsupported published resource content_type: ${input.content_type}`);
+    if (input.encoding === "utf8" && !INLINE_TEXT_MIME_TYPES.has(input.content_type)) throw new Error(`${input.content_type} resources must use base64 encoding`);
+    let bytes: Buffer;
+    if (input.encoding === "utf8") {
+      if (SECRET_PATTERN.test(input.content)) throw new Error("Published text appears to contain a credential or private key");
+      if (input.content_type === "application/json") JSON.parse(input.content);
+      bytes = Buffer.from(input.content, "utf8");
+    } else {
+      const compact = input.content.replace(/\s+/g, "");
+      if (!compact || compact.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) throw new Error("Invalid base64 resource content");
+      bytes = Buffer.from(compact, "base64");
+      if (bytes.toString("base64").replace(/=+$/, "") !== compact.replace(/=+$/, "")) throw new Error("Invalid base64 resource content");
+    }
+    if (INLINE_TEXT_MIME_TYPES.has(input.content_type) && SECRET_PATTERN.test(bytes.toString("utf8"))) throw new Error("Published text appears to contain a credential or private key");
+    if (bytes.length === 0) throw new Error("Published resource content cannot be empty");
+    if (bytes.length > MAX_INLINE_RESOURCE_BYTES) throw new Error(`Published resource exceeds the ${MAX_INLINE_RESOURCE_BYTES}-byte inline MCP limit; use a configured source root for large files`);
+    return bytes;
+  }
+
+  private async writeManagedResource(relativePath: string, bytes: Buffer): Promise<void> {
+    const target = this.managedResourcePath(relativePath);
+    await mkdir(dirname(target), { recursive: true });
+    const temp = `${target}.${randomUUID()}.tmp`;
+    await writeFile(temp, bytes);
+    await rename(temp, target);
+  }
+
+  async publishResource(input: PublishResourceInput): Promise<PublishedResource> {
+    const workItem = await this.get(input.work_id);
+    if (!workItem || workItem.record.type !== "work_item") throw new Error(`Unknown work item: ${input.work_id}`);
+    const work = workItem.record;
+    const bytes = this.decodePublishedContent(input);
+    const sha256 = digestBytes(bytes);
+    const rawName = input.filename.split(/[\\/]/).pop()?.trim() ?? "";
+    const filename = rawName.replace(/[^A-Za-z0-9._\-\u4e00-\u9fff]/g, "-").replace(/-+/g, "-").slice(0, 160);
+    if (!filename || filename === "." || filename === "..") throw new Error("filename must contain a safe file name");
+    const artifactId = `artifact:cyj:${digest(`${work.id}:${filename}:${sha256}`).slice(0, 24)}`;
+    const existing = await this.get(artifactId);
+    if (existing?.record.type === "artifact" && existing.record.sha256 === sha256 && existing.record.source_work_id === work.id) {
+      return {
+        artifact_id: artifactId, work_id: work.id, status: existing.record.status, sha256, size_bytes: bytes.length,
+        resource_uri: `kb://artifact/${encodeURIComponent(artifactId)}/document`, searchable: typeof existing.record.normalized_markdown_path === "string",
+        mineru_parse_supported: MINERU_MIME_TYPES.has(input.content_type),
+      };
+    }
+    if (!['in_progress', 'blocked'].includes(work.status)) throw new Error(`Work item ${work.id} is already closed; start a follow-up work item`);
+
+    const managedRelativePath = `agent-resources/${safeName(work.project_id)}/${safeName(work.id)}/${sha256.slice(0, 16)}-${filename}`;
+    await this.writeManagedResource(managedRelativePath, bytes);
+    let status = "registered";
+    let normalizedMarkdownPath: string | undefined;
+    let parseReportPath: string | undefined;
+    let imageAssociations: ImageAssociation[] = [];
+    if (INLINE_TEXT_MIME_TYPES.has(input.content_type)) {
+      const text = bytes.toString("utf8");
+      const normalized = input.content_type === "text/markdown" ? text : `# ${input.title}\n\n${text}`;
+      normalizedMarkdownPath = `normalized/${safeName(artifactId)}/document.md`;
+      parseReportPath = `normalized/${safeName(artifactId)}/parse-report.json`;
+      const normalizedContent = normalized.endsWith("\n") ? normalized : `${normalized}\n`;
+      await this.writeDerived(normalizedMarkdownPath, normalizedContent);
+      await this.writeDerived(parseReportPath, JSON.stringify({ artifact_id: artifactId, input_sha256: sha256, parser: "agent_inline_text", parser_mode: "local", egress: "none", normalized_markdown_path: normalizedMarkdownPath, completed_at: now() }, null, 2) + "\n");
+      imageAssociations = extractImageAssociations(normalizedContent, artifactId);
+      status = "parsed";
+    }
+    await this.upsertRecord({
+      id: artifactId, type: "artifact", title: input.title, status, project_id: work.project_id, created_by: input.actor,
+      mime_type: input.content_type, size_bytes: bytes.length, sha256, original_relative_path: managedRelativePath, managed_relative_path: managedRelativePath,
+      managed_upload: true, acquired_at: now(), source_kind: "agent_generated", source_work_id: work.id, resource_kind: input.kind,
+      source_refs: uniqueStrings([work.id, ...(input.source_refs ?? [])]), confidentiality: input.confidentiality ?? "internal",
+      parser_status: status === "parsed" ? "completed" : "not_requested", parser_name: status === "parsed" ? "agent_inline_text" : undefined,
+      parser_mode: status === "parsed" ? "local" : undefined, normalized_markdown_path: normalizedMarkdownPath, parse_report_path: parseReportPath,
+      parsed_page_count: 0, image_associations: imageAssociations,
+    }, `# ${input.title}\n\nAgent-generated resource captured from work item ${work.id}. It is persistent project material, not independently verified evidence.\n`);
+    await this.appendAudit({ type: "agent_resource_published", artifact_id: artifactId, work_id: work.id, project_id: work.project_id, actor: input.actor, sha256, size_bytes: bytes.length, mime_type: input.content_type });
+    return {
+      artifact_id: artifactId, work_id: work.id, status, sha256, size_bytes: bytes.length,
+      resource_uri: `kb://artifact/${encodeURIComponent(artifactId)}/document`, searchable: status === "parsed",
+      mineru_parse_supported: MINERU_MIME_TYPES.has(input.content_type),
     };
   }
 
@@ -354,6 +486,61 @@ export class ProjectRuntime {
     return { status: verdict.decision, eventId, remediation: verdict.remediation };
   }
 
+  private async persistMemorySubmissions(work: KnowledgeRecord, submissions: MemorySubmission[], actor: string, seed: string): Promise<{
+    promoted: string[]; quarantined: string[]; rejected: string[]; validationEvents: string[]; remediation: string[];
+  }> {
+    const output = { promoted: [] as string[], quarantined: [] as string[], rejected: [] as string[], validationEvents: [] as string[], remediation: [] as string[] };
+    for (const [ordinal, submission] of submissions.entries()) {
+      const candidate = this.memoryFromSubmission(work, submission, actor, seed, ordinal);
+      const existing = await this.get(candidate.id);
+      if (existing?.record.validation_event_ref) {
+        const status = existing.record.status as ValidationDecision;
+        if (status === "accepted") output.promoted.push(candidate.id);
+        else if (status === "rejected") output.rejected.push(candidate.id);
+        else output.quarantined.push(candidate.id);
+        continue;
+      }
+      await this.writeRecord(candidate, `# ${candidate.title}\n\n${submission.statement}`);
+      const verdict = await this.validateAndStore(candidate, actor);
+      output.validationEvents.push(verdict.eventId);
+      if (verdict.status === "accepted") output.promoted.push(candidate.id);
+      else if (verdict.status === "rejected") output.rejected.push(candidate.id);
+      else output.quarantined.push(candidate.id);
+      if (verdict.remediation) output.remediation.push(`remediation:${candidate.id}:${verdict.remediation}`);
+    }
+    return output;
+  }
+
+  async captureContext(input: { work_id: string; summary: string; updates: MemorySubmission[]; actor: string }): Promise<CaptureContextResult> {
+    const current = await this.get(input.work_id);
+    if (!current || current.record.type !== "work_item") throw new Error(`Unknown work item: ${input.work_id}`);
+    if (input.summary.trim().length < 3) throw new Error("Context checkpoint summary is too short");
+    if (input.updates.length === 0) throw new Error("Context checkpoint requires at least one structured update");
+    if (SECRET_PATTERN.test(input.summary)) throw new Error("Context checkpoint summary appears to contain a credential or private key");
+    const checkpointHash = digest(JSON.stringify({ work_id: input.work_id, summary: input.summary, updates: input.updates }));
+    const checkpointId = `activity:cyj:context-${checkpointHash.slice(0, 24)}`;
+    const existingCheckpoint = await this.get(checkpointId);
+    if (existingCheckpoint?.record.capture_result && typeof existingCheckpoint.record.capture_result === "object") return existingCheckpoint.record.capture_result as CaptureContextResult;
+    if (!["in_progress", "blocked"].includes(current.record.status)) throw new Error(`Work item ${input.work_id} is already closed; start a follow-up work item`);
+    const stored = await this.persistMemorySubmissions(current.record, input.updates, input.actor, `context:${checkpointHash}`);
+    const auditEventId = await this.appendAudit({
+      type: "agent_context_captured", work_id: current.record.id, project_id: current.record.project_id, actor: input.actor,
+      checkpoint_hash: checkpointHash, promoted_memory_ids: stored.promoted, quarantined_memory_ids: stored.quarantined,
+      rejected_memory_ids: stored.rejected, validation_event_ids: stored.validationEvents,
+    });
+    const result: CaptureContextResult = {
+      checkpoint_hash: checkpointHash, promoted_memory_ids: stored.promoted, quarantined_memory_ids: stored.quarantined,
+      rejected_memory_ids: stored.rejected, validation_event_ids: stored.validationEvents, audit_event_id: auditEventId,
+    };
+    await this.upsertRecord({
+      id: checkpointId, type: "activity", title: input.summary.slice(0, 120), status: "completed", project_id: current.record.project_id,
+      created_by: input.actor, kind: "context_checkpoint", occurred_at: now(), source_work_id: current.record.id,
+      checkpoint_hash: checkpointHash, capture_result: result,
+      source_refs: uniqueStrings([current.record.id, ...stored.promoted, ...stored.quarantined, ...stored.rejected]),
+    }, `# Context checkpoint\n\n${input.summary}\n`);
+    return result;
+  }
+
   async finishWork(input: FinishWorkInput): Promise<FinishWorkResult> {
     const current = await this.get(input.work_id);
     if (!current || current.record.type !== "work_item") throw new Error(`Unknown work item: ${input.work_id}`);
@@ -365,6 +552,7 @@ export class ProjectRuntime {
       ...(input.claims ?? []).map(item => ({ ...item, kind: "fact" as const })),
       ...(input.decisions ?? []).map(item => ({ ...item, kind: "decision" as const })),
       ...(input.lessons ?? []).map(item => ({ ...item, kind: "lesson" as const })),
+      ...(input.knowledge_updates ?? []),
     ];
     const result: FinishWorkResult = {
       work_status: input.outcome === "completed" ? "completed" : input.outcome === "cancelled" ? "cancelled" : "blocked",
@@ -372,25 +560,15 @@ export class ProjectRuntime {
       policy_trace_id: `trace:cyj:${randomUUID().replace(/-/g, "")}`,
       audit_event_id: "",
     };
-    for (const [ordinal, submission] of submissions.entries()) {
-      const candidate = this.memoryFromSubmission(work, submission, input.actor, input.result_hash, ordinal);
-      const existing = await this.get(candidate.id);
-      if (existing?.record.validation_event_ref) {
-        const status = existing.record.status as ValidationDecision;
-        if (status === "accepted") result.promoted_memory_ids.push(candidate.id);
-        else if (status === "rejected") result.rejected_memory_ids.push(candidate.id);
-        else result.quarantined_memory_ids.push(candidate.id);
-        continue;
-      }
-      await this.writeRecord(candidate, `# ${candidate.title}\n\n${submission.statement}`);
-      const verdict = await this.validateAndStore(candidate, input.actor);
-      result.validation_event_ids.push(verdict.eventId);
-      if (verdict.status === "accepted") result.promoted_memory_ids.push(candidate.id);
-      else if (verdict.status === "rejected") result.rejected_memory_ids.push(candidate.id);
-      else result.quarantined_memory_ids.push(candidate.id);
-      if (verdict.remediation) result.remediation_work_ids.push(`remediation:${candidate.id}:${verdict.remediation}`);
-    }
+    const stored = await this.persistMemorySubmissions(work, submissions, input.actor, input.result_hash);
+    result.promoted_memory_ids.push(...stored.promoted);
+    result.quarantined_memory_ids.push(...stored.quarantined);
+    result.rejected_memory_ids.push(...stored.rejected);
+    result.validation_event_ids.push(...stored.validationEvents);
+    result.remediation_work_ids.push(...stored.remediation);
     result.accepted_updates = result.promoted_memory_ids;
+    const generatedArtifacts = (await this.lookup("artifact", { source_work_id: work.id }, 100)).map(record => record.id);
+    const artifactRefs = uniqueStrings([...(input.artifacts ?? []), ...generatedArtifacts]);
     result.audit_event_id = await this.appendAudit({ type: "work_closeout", work_id: work.id, result_hash: input.result_hash, actor: input.actor, result });
     await this.upsertRecord({
       ...work,
@@ -400,7 +578,7 @@ export class ProjectRuntime {
       closeout_result: result,
       closeout_summary: input.summary,
       outcome: input.outcome,
-      artifacts: input.artifacts ?? [],
+      artifacts: artifactRefs,
       unresolved: input.unresolved ?? [],
       evidence_refs: input.evidence_refs ?? [],
     }, current.body);
@@ -593,8 +771,9 @@ export class ProjectRuntime {
         return { artifact_id: artifact.id, status: "parsed", normalized_markdown_path: artifact.normalized_markdown_path, page_count: Number(artifact.parsed_page_count ?? 0) };
       } catch { /* derived content was deleted; rebuild below */ }
     }
-    const sourceRoot = await this.sourceRootForArtifact(artifact);
-    const sourcePath = sourceFilePath(this.root, sourceRoot, artifact.original_relative_path);
+    const sourcePath = artifact.managed_upload === true && typeof artifact.managed_relative_path === "string"
+      ? this.managedResourcePath(artifact.managed_relative_path)
+      : sourceFilePath(this.root, await this.sourceRootForArtifact(artifact), artifact.original_relative_path);
     const sourceStat = await lstat(sourcePath);
     if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) throw new Error(`Artifact ${artifactId} source is not a regular file`);
 

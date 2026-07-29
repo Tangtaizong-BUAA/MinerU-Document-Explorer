@@ -54,7 +54,8 @@ export async function createMcpServer(store: QMDStore, options: ProjectMcpOption
     : [
         "Changyi Jiuan project knowledge base.",
         "Start with kb_brief, then use kb_lookup or kb_search for focused evidence.",
-        "Use kb_start_work before a material task and kb_finish_work after it.",
+        "Use kb_start_work before a material task, kb_publish_resource for every durable output, kb_capture_context for distilled conversation knowledge, and kb_finish_work after it.",
+        "Never leave the only copy of project-related output in chat or a client workspace.",
         "Memory promotion is policy-controlled; never claim quarantined evidence as established fact.",
       ].join("\n");
   const server = new McpServer(

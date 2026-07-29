@@ -42,6 +42,8 @@ describe("Changyi Jiuan MCP profiles", () => {
     });
 
     expect(toolNames(server)).toContain("kb_start_work");
+    expect(toolNames(server)).toContain("kb_publish_resource");
+    expect(toolNames(server)).toContain("kb_capture_context");
     expect(toolNames(server)).toContain("kb_finish_work");
     expect(toolNames(server)).not.toContain("query");
   });
