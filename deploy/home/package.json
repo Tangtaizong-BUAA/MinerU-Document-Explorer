@@ -1,0 +1,11 @@
+{
+  "name": "changyi-jiuan-lightweight-mcp-runtime",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.25.1",
+    "yaml": "2.8.2",
+    "zod": "4.2.1"
+  }
+}

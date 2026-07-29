@@ -59,3 +59,20 @@ Authorization: Bearer $CYJ_MCP_BEARER_TOKEN
 4. `project-maintain` 额外出现 `kb_start_work/kb_update_main/kb_upsert_section/kb_publish_resource/kb_capture_context/kb_finish_work`；
 5. closeout 产生 audit event，重试同一 `work_id + result_hash` 返回相同结果；
 6. `project-admin` 才出现项目 bootstrap、source root 配置、摄取、MinerU 解析、记忆调解与维护工具。
+
+## 家庭主节点与阿里云回退
+
+资源受限的家庭服务器使用项目专用轻量入口 `dist/cli/project-mcp-http.js`。它只加载项目运行时、MCP SDK、YAML 和 Zod，不加载完整 QMD 的 SQLite、向量、本地模型与重排依赖；`project-admin` 工具、`kb://` 资源、Skill 增量同步和 MinerU 云 API 仍然保留。可复现镜像定义位于 `deploy/home/`，`deploy/scripts/package-lightweight-mcp.sh` 会生成只包含所需编译产物和 SHA-256 清单的部署目录。
+
+生产拓扑遵守单写者原则：
+
+1. `https://argonai.cn/cyj/mcp` 始终是客户端唯一入口；阿里云 Nginx 负责 HTTPS 与上游选择。
+2. 家庭服务器的 `project-admin` 轻量容器绑定宿主机 `127.0.0.1:8793`，通过专用 frp TCP 代理映射到阿里云回环可用端口；该 frp 端口必须用防火墙拒绝非 loopback 访问。
+3. 阿里云另起 `project-read` 回退服务，读取家庭节点的定期只读快照。家庭上游不可达时，新的 MCP 会话可自动回退并继续问答，但不暴露写入、摄取或记忆维护工具。
+4. 已连接到失效主节点的会话需要由客户端重新初始化。禁止把同一会话 ID 跨节点伪装迁移。
+5. 家庭节点恢复后，先确认数据一致性，再让新会话重新优先家庭节点；回退节点不得接受写入，避免故障窗口形成双写分叉。
+6. 阿里云原 `project-admin` 服务和切换前数据快照保留为人工回滚点，不进入自动双写或自动反向合并。
+
+家庭容器默认限制为 384 MiB 内存、768 MiB 内存加 swap、1.5 CPU、128 个进程，并启用只读根文件系统、`no-new-privileges`、会话过期回收和独立健康检查。`/data` 是唯一知识写卷；访问令牌和 MinerU 凭据仍只通过 `/etc/changyi-jiuan-mcp.env` 注入。
+
+切换顺序必须是：阿里云数据与配置快照 → 家庭节点部署 → 影子路径完整验收 → 只读回退验收 → 故障注入 → 正式 Nginx 原子替换与 reload。任一阶段失败时，不修改正式入口。

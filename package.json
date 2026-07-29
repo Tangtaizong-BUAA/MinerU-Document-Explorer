@@ -34,6 +34,7 @@
     "vsearch": "tsx src/cli/qmd.ts vsearch",
     "rerank": "tsx src/cli/qmd.ts rerank",
     "inspector": "npx @modelcontextprotocol/inspector tsx src/cli/qmd.ts mcp",
+    "project:mcp:http": "tsx src/cli/project-mcp-http.ts",
     "release": "./scripts/release.sh"
   },
   "repository": {

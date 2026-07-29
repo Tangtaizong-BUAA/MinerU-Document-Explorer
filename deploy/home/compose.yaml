@@ -1,0 +1,33 @@
+services:
+  changyi-jiuan-mcp:
+    image: changyi-jiuan-mcp:0.4.0
+    container_name: changyi-jiuan-mcp
+    restart: unless-stopped
+    init: true
+    env_file:
+      - /etc/changyi-jiuan-mcp.env
+    environment:
+      CYJ_MCP_PROFILE: project-admin
+      CYJ_KB_ROOT: /data
+      CYJ_MCP_HOST: 0.0.0.0
+      CYJ_MCP_PORT: "8793"
+      CYJ_PYTHON_BIN: /usr/bin/python3
+    ports:
+      - "127.0.0.1:8793:8793"
+    volumes:
+      - /srv/changyi-jiuan-kb/data:/data
+    mem_limit: 384m
+    memswap_limit: 768m
+    cpus: 1.5
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8793/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
