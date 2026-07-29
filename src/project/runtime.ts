@@ -13,8 +13,11 @@ import YAML from "yaml";
 import { validateProjectRecords, type ValidationIssue } from "./validation.js";
 import { buildProjectView, PROJECT_VIEW_KINDS, type ProjectViewKind } from "./views.js";
 import { inventorySourceRoot, parseSourceRoots, sourceFilePath, type InventoryEntry, type SourceRoot } from "./ingestion.js";
+import { CanonicalRevisionStore, type CanonicalDirectory } from "./revision-store.js";
+import { MaintenanceQueue } from "./maintenance/queue.js";
+import type { ChangePacket, MaintenancePlan } from "./maintenance/contracts.js";
 
-export type ProjectProfile = "upstream-full" | "project-read" | "project-maintain" | "project-admin";
+export type ProjectProfile = "upstream-full" | "project-read" | "project-contribute" | "project-resolve" | "project-ops" | "project-maintain" | "project-admin";
 export type MemoryKind = "fact" | "decision" | "procedure" | "lesson" | "constraint" | "preference" | "open_question";
 export type MemoryStatus = "candidate" | "validating" | "accepted" | "quarantined" | "rejected" | "disputed" | "superseded";
 export type Confidentiality = "public" | "internal" | "restricted" | "secret";
@@ -216,6 +219,7 @@ const GRAPH_REFERENCE_FIELDS: Array<{ field: string; relation: string }> = [
   { field: "artifact_id", relation: "describes_artifact" },
   { field: "source_work_id", relation: "produced_by" },
   { field: "last_modified_work_id", relation: "updated_by_work" },
+  { field: "conflict_refs", relation: "has_conflict" },
   { field: "subject_ref", relation: "validates" },
   { field: "supersedes", relation: "supersedes" },
 ];
@@ -302,11 +306,37 @@ function extractImageAssociations(markdown: string, artifactId: string): ImageAs
 
 export class ProjectRuntime {
   readonly root: string;
+  readonly revisionStore: CanonicalRevisionStore;
+  readonly maintenanceQueue: MaintenanceQueue;
 
-  constructor(root: string) { this.root = root; }
+  constructor(root: string) { this.root = root; this.revisionStore = new CanonicalRevisionStore(root); this.maintenanceQueue = new MaintenanceQueue(join(root, "maintenance", "jobs.sqlite")); }
 
   async initialize(): Promise<void> {
     await Promise.all(["registry", "memory", "events", "audit", "ingestion"].map(dir => mkdir(join(this.root, dir), { recursive: true })));
+    await this.revisionStore.initialize();
+    await this.maintenanceQueue.initialize();
+  }
+
+  private async enqueueMaintenance(input: {
+    project_id: string; trigger: ChangePacket["trigger"]; idempotency_key: string; text_context: string;
+    evidence_refs?: string[]; candidate_section_refs?: string[]; media?: ChangePacket["media"]; locked_user_resolution_ref?: string;
+  }): Promise<string> {
+    const pointer = await this.revisionStore.pointer();
+    const records = (await this.records()).map(item => item.record);
+    const openConflicts = records.filter(record => record.project_id === input.project_id && record.type === "conflict" && ["open", "resolution_pending"].includes(record.status)).map(record => record.id).slice(0, 30);
+    const packetId = `packet:cyj:${digest(input.idempotency_key).slice(0, 24)}`;
+    const packet: ChangePacket = {
+      schema: "cyj-change-packet/v1", packet_id: packetId, project_id: input.project_id, idempotency_key: input.idempotency_key,
+      trigger: input.trigger,
+      base_revisions: { knowledge_revision: pointer?.knowledge_revision ?? "legacy", topology_revision: pointer?.topology_revision ?? "legacy", index_revision: pointer?.index_revision ?? "unbuilt" },
+      evidence_refs: uniqueStrings(input.evidence_refs ?? []).slice(0, 40), candidate_section_refs: uniqueStrings(input.candidate_section_refs ?? []).slice(0, 6),
+      open_conflict_refs: openConflicts, text_context: input.text_context.slice(0, 24_000), media: (input.media ?? []).slice(0, 12),
+      budget: { max_tool_calls: 8, max_cumulative_input_tokens: 12000, max_context_tokens_per_step: 6000, max_cumulative_output_tokens: 3000, max_sections: 6, max_evidence_units: 40, max_multimodal_assets: 12, max_cost_usd: Number(process.env.CYJ_MAINTENANCE_MAX_COST_USD ?? "0.50") },
+      egress_policy: { maximum_confidentiality: "internal", provider: "alibaba_model_studio", region: process.env.CYJ_DASHSCOPE_REGION ?? "cn-beijing" },
+      ...(input.locked_user_resolution_ref ? { locked_user_resolution_ref: input.locked_user_resolution_ref } : {}),
+    };
+    await this.maintenanceQueue.enqueue(packet);
+    return packetId;
   }
 
   private directoryFor(record: KnowledgeRecord): string {
@@ -317,15 +347,12 @@ export class ProjectRuntime {
 
   private async writeRecord(record: KnowledgeRecord, body = ""): Promise<void> {
     await this.initialize();
-    const path = join(this.root, this.directoryFor(record), `${safeName(record.id)}.md`);
-    const temp = `${path}.${randomUUID()}.tmp`;
-    await writeFile(temp, renderRecord(record, body), "utf8");
-    await rename(temp, path);
+    await this.revisionStore.publish([{ directory: this.directoryFor(record) as CanonicalDirectory, filename: `${safeName(record.id)}.md`, content: renderRecord(record, body) }]);
   }
 
   private async readDirectory(dir: string): Promise<Array<{ record: KnowledgeRecord; body: string }>> {
     await this.initialize();
-    const folder = join(this.root, dir);
+    const folder = await this.revisionStore.activeDirectory(dir as CanonicalDirectory);
     const names = await readdir(folder);
     const records = await Promise.all(names.filter(name => name.endsWith(".md")).map(async name => {
       const text = await readFile(join(folder, name), "utf8");
@@ -467,6 +494,12 @@ export class ProjectRuntime {
       parsed_page_count: 0, image_associations: imageAssociations,
     }, `# ${input.title}\n\nAgent-generated resource captured from work item ${work.id}. It is persistent project material, not independently verified evidence.\n`);
     await this.appendAudit({ type: "agent_resource_published", artifact_id: artifactId, work_id: work.id, project_id: work.project_id, actor: input.actor, sha256, size_bytes: bytes.length, mime_type: input.content_type });
+    const modality = input.content_type.startsWith("image/") ? "image" as const : input.content_type.startsWith("video/") ? "video" as const : undefined;
+    await this.enqueueMaintenance({
+      project_id: work.project_id, trigger: "resource_published", idempotency_key: `resource:${artifactId}:${sha256}`,
+      text_context: `Agent resource published: ${input.title} (${input.kind}, ${input.content_type})`, evidence_refs: [artifactId],
+      media: modality ? [{ evidence_id: `evidence:${artifactId}:raw`, artifact_id: artifactId, modality, mime_type: input.content_type, sha256, locator: {}, transport: "base64_data_uri", value: `data:${input.content_type};base64,${bytes.toString("base64")}`, native_video_required: modality === "video" }] : [],
+    });
     return {
       artifact_id: artifactId, work_id: work.id, status, sha256, size_bytes: bytes.length,
       resource_uri: `kb://artifact/${encodeURIComponent(artifactId)}/document`, searchable: status === "parsed",
@@ -612,6 +645,7 @@ export class ProjectRuntime {
       checkpoint_hash: checkpointHash, capture_result: result,
       source_refs: uniqueStrings([current.record.id, ...stored.promoted, ...stored.quarantined, ...stored.rejected]),
     }, `# Context checkpoint\n\n${input.summary}\n`);
+    await this.enqueueMaintenance({ project_id: current.record.project_id, trigger: "context_captured", idempotency_key: `context:${checkpointHash}`, text_context: input.summary, evidence_refs: uniqueStrings([...stored.promoted, ...stored.quarantined, ...stored.rejected]) });
     return result;
   }
 
@@ -656,6 +690,7 @@ export class ProjectRuntime {
       unresolved: input.unresolved ?? [],
       evidence_refs: input.evidence_refs ?? [],
     }, current.body);
+    await this.enqueueMaintenance({ project_id: work.project_id, trigger: "work_finished", idempotency_key: `work:${work.id}:${input.result_hash}`, text_context: input.summary, evidence_refs: uniqueStrings([...(input.evidence_refs ?? []), ...artifactRefs, ...result.promoted_memory_ids, ...result.quarantined_memory_ids]) });
     return result;
   }
 
@@ -921,6 +956,7 @@ export class ProjectRuntime {
     const activeWork = records.filter(record => record.type === "work_item" && record.project_id === projectId && ["in_progress", "awaiting_closeout", "blocked"].includes(record.status));
     const memories = records.filter(record => record.type === "memory" && record.project_id === projectId && record.status === "accepted").sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 20);
     const sections = records.filter(record => record.type === "knowledge_section" && record.project_id === projectId && record.status === "active");
+    const openConflictItems = items.filter(item => item.record.type === "conflict" && item.record.project_id === projectId && ["open", "resolution_pending"].includes(item.record.status));
     const legacyEntries = records.filter(record => record.project_id === projectId && ["workstream", "deliverable"].includes(record.type));
     const edges = this.graphEdges(records.filter(record => record.project_id === projectId || record.id === projectId));
     const mainMarkdown = projectItem?.body ?? "";
@@ -936,8 +972,140 @@ export class ProjectRuntime {
       graph: { node_count: records.filter(record => record.project_id === projectId || record.id === projectId).length, edge_count: edges.length },
       active_work: activeWork.map(record => ({ id: record.id, title: record.title, status: record.status })),
       accepted_memory: memories.map(record => ({ id: record.id, kind: record.kind, statement: record.statement, scope: record.scope })),
+      open_conflicts: openConflictItems.map(({ record, body }) => ({ id: record.id, title: record.title, status: record.status, topic: record.topic, severity: record.severity, suggested_user_question: record.suggested_user_question, revision_hash: digest(renderRecord(record, body)), uri: `kb://record/${encodeURIComponent(record.id)}` })),
       generated_at: now(),
     };
+  }
+
+  async submitUserConflictResolution(input: {
+    conflict_id: string; expected_conflict_revision: string; resolution_statement: string; source_turn_ref: string;
+    user_statement_hash: string; idempotency_key: string; actor_principal: string;
+  }): Promise<Record<string, unknown>> {
+    const found = await this.get(input.conflict_id);
+    if (!found || found.record.type !== "conflict") throw new Error(`Unknown conflict: ${input.conflict_id}`);
+    if (found.record.status !== "open") throw new Error(`Conflict is ${found.record.status}, expected open`);
+    const currentRevision = digest(renderRecord(found.record, found.body));
+    if (currentRevision !== input.expected_conflict_revision) throw new Error(`Conflict revision conflict: expected ${input.expected_conflict_revision}, current ${currentRevision}`);
+    if (digest(input.resolution_statement) !== input.user_statement_hash) throw new Error("user_statement_hash does not match resolution_statement");
+    const existing = (await this.lookup("user_conflict_resolution", { idempotency_key: input.idempotency_key }, 2))[0];
+    if (existing) return { conflict_id: input.conflict_id, status: "resolution_pending", resolution_id: existing.id, current_conflict_revision: currentRevision, actor_principal: input.actor_principal, attestation_mode: "verified_principal", idempotent_replay: true };
+    const resolutionId = newId("user_conflict_resolution");
+    const queueIdempotencyKey = `resolution:${input.idempotency_key}`;
+    const packetId = `packet:cyj:${digest(queueIdempotencyKey).slice(0, 24)}`;
+    const createdAt = now();
+    const common = { project_id: found.record.project_id, created_at: createdAt, updated_at: createdAt, confidentiality: found.record.confidentiality ?? "internal", schema_version: 1 };
+    const resolution: KnowledgeRecord = {
+      ...common, id: resolutionId, type: "user_conflict_resolution", title: `Resolution for ${input.conflict_id}`, status: "locked",
+      created_by: input.actor_principal, conflict_id: input.conflict_id, expected_conflict_revision: input.expected_conflict_revision,
+      resolution_statement: input.resolution_statement, source_turn_ref: input.source_turn_ref, user_statement_hash: input.user_statement_hash,
+      idempotency_key: input.idempotency_key, submitted_by_principal: input.actor_principal, attestation_mode: "verified_principal", change_packet_id: packetId,
+    };
+    const conflict: KnowledgeRecord = { ...found.record, status: "resolution_pending", resolution_ref: resolutionId, resolution_locked_at: createdAt, updated_at: createdAt };
+    const packet: KnowledgeRecord = {
+      ...common, id: packetId, type: "maintenance_change_packet", title: `Apply resolution ${resolutionId}`, status: "queued",
+      created_by: "conflict-service", trigger: "user_resolution_locked", idempotency_key: input.idempotency_key,
+      locked_user_resolution_ref: resolutionId, conflict_refs: [input.conflict_id],
+    };
+    await this.revisionStore.publish([
+      { directory: "registry", filename: `${safeName(resolution.id)}.md`, content: renderRecord(resolution, "# Locked user conflict resolution\n\nThis record is immutable input to the maintenance harness.\n") },
+      { directory: this.directoryFor(conflict) as CanonicalDirectory, filename: `${safeName(conflict.id)}.md`, content: renderRecord(conflict, found.body) },
+      { directory: "registry", filename: `${safeName(packet.id)}.md`, content: renderRecord(packet) },
+    ]);
+    await this.enqueueMaintenance({ project_id: found.record.project_id, trigger: "user_resolution_locked", idempotency_key: queueIdempotencyKey, text_context: input.resolution_statement, evidence_refs: [input.conflict_id, resolutionId], locked_user_resolution_ref: resolutionId });
+    await this.appendAudit({ type: "user_conflict_resolution_locked", project_id: found.record.project_id, conflict_id: input.conflict_id, resolution_id: resolutionId, change_packet_id: packetId, actor: input.actor_principal });
+    const updated = await this.get(input.conflict_id);
+    return { conflict_id: input.conflict_id, status: "resolution_pending", resolution_id: resolutionId, change_packet_id: packetId, current_conflict_revision: updated ? digest(renderRecord(updated.record, updated.body)) : currentRevision, actor_principal: input.actor_principal, attestation_mode: "verified_principal" };
+  }
+
+  async enqueueLegacyProposal(input: { project_id: string; kind: string; payload: Record<string, unknown>; actor: string }): Promise<Record<string, unknown>> {
+    const packetId = newId("change_packet");
+    const idempotencyKey = digest(JSON.stringify({ project_id: input.project_id, kind: input.kind, payload: input.payload }));
+    const existing = (await this.lookup("maintenance_change_packet", { idempotency_key: idempotencyKey }, 2))[0];
+    if (existing) return { status: "queued", change_packet_id: existing.id, migration_required: true, idempotent_replay: true };
+    const pointer = await this.revisionStore.pointer();
+    await this.upsertRecord({
+      id: packetId, type: "maintenance_change_packet", title: `Legacy proposal: ${input.kind}`, status: "queued",
+      project_id: input.project_id, created_by: input.actor, trigger: "legacy_proposal", idempotency_key: idempotencyKey,
+      proposal_kind: input.kind, proposal_payload: input.payload, base_knowledge_revision: pointer?.knowledge_revision ?? "legacy",
+    });
+    return { status: "queued", change_packet_id: packetId, current_revision: pointer?.knowledge_revision ?? "legacy", migration_required: true, deprecation: "0.5 canonical maintenance is asynchronous; this legacy call created a proposal only" };
+  }
+
+  async applyMaintenancePlan(packet: ChangePacket, plan: MaintenancePlan, actor = "maintenance-harness"): Promise<{ knowledge_revision: string; changed_records: string[] }> {
+    const pointer = await this.revisionStore.pointer();
+    if ((pointer?.knowledge_revision ?? "legacy") !== plan.base_knowledge_revision) throw new Error("Maintenance plan base revision is stale");
+    const items = await this.records();
+    const working = new Map(items.map(item => [item.record.id, { record: { ...item.record }, body: item.body }]));
+    const changed = new Set<string>();
+    const requireRecord = (id: string) => { const item = working.get(id); if (!item) throw new Error(`Maintenance target not found: ${id}`); return item; };
+    const patchBody = (body: string, blockKey: string, replacement: string): string => {
+      if (blockKey === "document") return replacement.trimEnd() + "\n";
+      const start = `<!-- kb:block ${blockKey} -->`;
+      const end = `<!-- /kb:block ${blockKey} -->`;
+      const from = body.indexOf(start); const to = body.indexOf(end);
+      if (from < 0 || to < from) throw new Error(`Stable block not found: ${blockKey}`);
+      return `${body.slice(0, from + start.length)}\n${replacement.trim()}\n${body.slice(to)}`;
+    };
+    const blockHash = (body: string, blockKey: string): string => {
+      if (blockKey === "document") return digest(body);
+      const start = `<!-- kb:block ${blockKey} -->`; const end = `<!-- /kb:block ${blockKey} -->`;
+      const from = body.indexOf(start); const to = body.indexOf(end);
+      if (from < 0 || to < from) throw new Error(`Stable block not found: ${blockKey}`);
+      return digest(body.slice(from + start.length, to).trim());
+    };
+    for (const operation of plan.operations) {
+      if (operation.op === "no_change") continue;
+      if (operation.op === "patch_main" || operation.op === "patch_section") {
+        const item = requireRecord(operation.patch.target_ref);
+        const currentRevision = operation.op === "patch_main" ? String(item.record.main_revision ?? digest(item.body)) : String(item.record.revision_hash ?? digest(item.body));
+        if (currentRevision !== operation.patch.expected_revision || blockHash(item.body, operation.patch.block_key) !== operation.patch.previous_block_hash) throw new Error(`Maintenance document revision conflict: ${item.record.id}`);
+        item.body = patchBody(item.body, operation.patch.block_key, operation.patch.replacement_markdown);
+        const revision = digest(item.body);
+        if (operation.op === "patch_main") item.record.main_revision = revision; else item.record.revision_hash = revision;
+        item.record.updated_at = now(); item.record.updated_by = actor; item.record.source_refs = uniqueStrings([...asStrings(item.record.source_refs), ...operation.patch.evidence_refs]);
+        changed.add(item.record.id);
+      } else if (operation.op === "create_section") {
+        const id = `section:cyj:${digest(packet.project_id).slice(0, 8)}:${operation.proposal.key}`;
+        if (working.has(id)) throw new Error(`Maintenance section already exists: ${id}`);
+        const timestamp = now();
+        working.set(id, { record: { id, type: "knowledge_section", title: operation.proposal.title, status: "active", project_id: packet.project_id, created_at: timestamp, updated_at: timestamp, created_by: actor, confidentiality: "internal", schema_version: 1, key: operation.proposal.key, summary: operation.proposal.summary, parent_ref: packet.project_id, artifact_refs: operation.proposal.evidence_refs.filter(ref => ref.startsWith("artifact:")), source_refs: operation.proposal.evidence_refs, child_section_refs: [], related_refs: [], conflict_refs: [], revision_hash: digest(operation.proposal.markdown.trimEnd() + "\n") }, body: operation.proposal.markdown.trimEnd() + "\n" });
+        const project = requireRecord(packet.project_id); project.record.section_refs = uniqueStrings([...asStrings(project.record.section_refs), id]); project.record.updated_at = timestamp;
+        changed.add(id); changed.add(project.record.id);
+      } else if (operation.op === "update_topology") {
+        const item = requireRecord(operation.patch.target_ref); item.record.related_refs = uniqueStrings([...asStrings(item.record.related_refs), ...operation.patch.add_refs]); item.record.updated_at = now(); changed.add(item.record.id);
+      } else if (operation.op === "register_conflict") {
+        const id = `conflict:cyj:${digest(`${packet.packet_id}:${operation.conflict.topic}`).slice(0, 24)}`;
+        if (!working.has(id)) {
+          const timestamp = now();
+          working.set(id, { record: { id, type: "conflict", title: operation.conflict.topic, topic: operation.conflict.topic, status: "open", project_id: packet.project_id, created_at: timestamp, updated_at: timestamp, created_by: actor, confidentiality: "internal", schema_version: 1, claim_variants: operation.conflict.claim_variants, artifact_refs: operation.conflict.evidence_refs.filter(ref => ref.startsWith("artifact:")), evidence_refs: operation.conflict.evidence_refs, severity: "medium", impact: "requires_user_resolution", suggested_user_question: operation.conflict.suggested_user_question, created_revision: plan.base_knowledge_revision, last_seen_revision: plan.base_knowledge_revision }, body: `# ${operation.conflict.topic}\n` });
+          const project = requireRecord(packet.project_id); project.record.conflict_refs = uniqueStrings([...asStrings(project.record.conflict_refs), id]); project.record.updated_at = timestamp;
+          changed.add(id); changed.add(project.record.id);
+        }
+      } else if (operation.op === "observe_conflict") {
+        const item = requireRecord(operation.observation.conflict_id);
+        if (item.record.type !== "conflict" || item.record.status === "resolved") throw new Error("Resolved conflict counterevidence requires a new open conflict");
+        const observations = Array.isArray(item.record.evidence_observations) ? item.record.evidence_observations : [];
+        item.record.evidence_observations = [...observations, { target_claim_variant_refs: operation.observation.target_claim_variant_refs, evidence_refs: operation.observation.evidence_refs, observed_at: now(), packet_id: packet.packet_id }];
+        item.record.last_seen_revision = plan.base_knowledge_revision; item.record.updated_at = now(); changed.add(item.record.id);
+      }
+    }
+    if (plan.typed_resolution) {
+      const conflict = requireRecord(plan.typed_resolution.conflict_id);
+      if (conflict.record.status !== "resolution_pending" || conflict.record.resolution_ref !== plan.typed_resolution.locked_user_resolution_ref) throw new Error("Conflict is not locked by this resolution");
+      conflict.record.status = plan.typed_resolution.outcome === "remain_open" ? "open" : "resolved";
+      conflict.record.resolution = { ...plan.typed_resolution, applied_at: now(), packet_id: packet.packet_id };
+      conflict.record.updated_at = now(); changed.add(conflict.record.id);
+      const resolution = requireRecord(plan.typed_resolution.locked_user_resolution_ref); resolution.record.status = "applied"; resolution.record.updated_at = now(); changed.add(resolution.record.id);
+    }
+    if (changed.size === 0) return { knowledge_revision: pointer?.knowledge_revision ?? "legacy", changed_records: [] };
+    const planRecordId = `maintenance_plan:cyj:${digest(packet.packet_id).slice(0, 24)}`;
+    const timestamp = now();
+    working.set(planRecordId, { record: { id: planRecordId, type: "maintenance_plan", title: `Maintenance plan ${packet.packet_id}`, status: "committed", project_id: packet.project_id, created_at: timestamp, updated_at: timestamp, created_by: actor, confidentiality: "internal", schema_version: 1, packet_id: packet.packet_id, prompt_version: plan.prompt_version, tool_schema_version: plan.tool_schema_version, operations: plan.operations, typed_resolution: plan.typed_resolution }, body: "# Committed maintenance plan\n" });
+    changed.add(planRecordId);
+    const mutations = [...changed].map(id => { const item = requireRecord(id); return { directory: this.directoryFor(item.record) as CanonicalDirectory, filename: `${safeName(id)}.md`, content: renderRecord(item.record, item.body) }; });
+    const published = await this.revisionStore.publish(mutations);
+    await this.appendAudit({ type: "maintenance_plan_committed", project_id: packet.project_id, packet_id: packet.packet_id, actor, knowledge_revision: published.knowledge_revision, changed_records: [...changed] });
+    return { knowledge_revision: published.knowledge_revision, changed_records: [...changed] };
   }
 
   async view(projectId: string, kind: ProjectViewKind): Promise<Record<string, unknown>> {
@@ -1235,7 +1403,7 @@ export class ProjectRuntime {
 }
 
 export function resolveProjectProfile(value: string | undefined): ProjectProfile {
-  if (value === "project-read" || value === "project-maintain" || value === "project-admin" || value === "upstream-full") return value;
+  if (value === "project-read" || value === "project-contribute" || value === "project-resolve" || value === "project-ops" || value === "project-maintain" || value === "project-admin" || value === "upstream-full") return value;
   return "upstream-full";
 }
 

@@ -6,6 +6,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { PROJECT_MCP_SERVER_VERSION } from "../project/client-skill.js";
 import { ProjectRuntime, resolveProjectProfile, resolveProjectRoot, type ProjectProfile } from "../project/runtime.js";
+import { authenticatePrincipal, canResolveConflicts, parsePrincipalRegistry, type ProjectPrincipal } from "../project/principals.js";
 import { installProjectToolVersioning } from "./project-versioning.js";
 import { registerLightweightProjectResource } from "./project-resource.js";
 import { registerProjectTools } from "./tools/project.js";
@@ -14,7 +15,7 @@ const DEFAULT_SESSION_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 
 type ProjectServerProfile = Exclude<ProjectProfile, "upstream-full">;
-type Session = { transport: WebStandardStreamableHTTPServerTransport; lastSeenAt: number };
+type Session = { transport: WebStandardStreamableHTTPServerTransport; lastSeenAt: number; principal: ProjectPrincipal };
 
 export type LightweightProjectHttpOptions = {
   host?: string;
@@ -26,6 +27,7 @@ export type LightweightProjectHttpOptions = {
   quiet?: boolean;
   sessionTtlMs?: number;
   maxRequestBytes?: number;
+  principalRegistryJson?: string;
 };
 
 export type LightweightProjectHttpHandle = {
@@ -76,11 +78,12 @@ export async function startLightweightProjectHttpServer(
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 8793;
   const profile = resolveProjectProfile(options.projectProfile ?? process.env.CYJ_MCP_PROFILE);
-  if (profile === "upstream-full") throw new Error("The lightweight server accepts only project-read, project-maintain, or project-admin profiles");
+  if (profile === "upstream-full") throw new Error("The lightweight server accepts only project profiles");
   const projectRoot = resolveProjectRoot(options.projectDataDir ?? process.env.CYJ_KB_ROOT);
   if (!projectRoot) throw new Error("CYJ_KB_ROOT or projectDataDir is required");
   const bearerToken = options.bearerToken ?? process.env.CYJ_MCP_BEARER_TOKEN ?? "";
-  if (!bearerToken && !options.allowUnauthenticated) throw new Error("CYJ_MCP_BEARER_TOKEN is required unless unauthenticated mode is explicitly enabled");
+  const principalRegistry = parsePrincipalRegistry(options.principalRegistryJson ?? process.env.CYJ_MCP_PRINCIPALS_JSON);
+  if (!bearerToken && principalRegistry.length === 0 && !options.allowUnauthenticated) throw new Error("CYJ_MCP_BEARER_TOKEN or CYJ_MCP_PRINCIPALS_JSON is required unless unauthenticated mode is explicitly enabled");
 
   const sessionTtlMs = Math.max(60_000, options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS);
   const maximumBytes = Math.max(64 * 1024, options.maxRequestBytes ?? DEFAULT_MAX_REQUEST_BYTES);
@@ -89,13 +92,13 @@ export async function startLightweightProjectHttpServer(
   const sessions = new Map<string, Session>();
   const startedAt = Date.now();
 
-  async function createSession(): Promise<WebStandardStreamableHTTPServerTransport> {
+  async function createSession(principal: ProjectPrincipal): Promise<WebStandardStreamableHTTPServerTransport> {
     let transport: WebStandardStreamableHTTPServerTransport;
     transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: randomUUID,
       enableJsonResponse: true,
       onsessioninitialized: (sessionId: string) => {
-        sessions.set(sessionId, { transport, lastSeenAt: Date.now() });
+        sessions.set(sessionId, { transport, lastSeenAt: Date.now(), principal });
       },
     });
     const server = new McpServer(
@@ -103,8 +106,8 @@ export async function startLightweightProjectHttpServer(
       { instructions: projectInstructions() },
     );
     installProjectToolVersioning(server);
-    registerLightweightProjectResource(server, runtime, profile as ProjectServerProfile);
-    registerProjectTools(server, runtime, profile as ProjectServerProfile);
+    registerLightweightProjectResource(server, runtime, principal.profile);
+    registerProjectTools(server, runtime, principal.profile, principal.principal_id);
     await server.connect(transport);
     transport.onclose = () => {
       if (transport.sessionId) sessions.delete(transport.sessionId);
@@ -131,8 +134,16 @@ export async function startLightweightProjectHttpServer(
         json(res, 404, { error: "Not found" });
         return;
       }
-      if (bearerToken && req.headers.authorization !== `Bearer ${bearerToken}`) {
+      const suppliedToken = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : "";
+      const registeredPrincipal = suppliedToken && principalRegistry.length ? authenticatePrincipal(suppliedToken, principalRegistry) : null;
+      const legacyAuthorized = bearerToken && suppliedToken === bearerToken;
+      if (!registeredPrincipal && !legacyAuthorized && !options.allowUnauthenticated) {
         json(res, 401, { error: "Missing or invalid MCP bearer token" }, { "www-authenticate": "Bearer" });
+        return;
+      }
+      const requestPrincipal: ProjectPrincipal = registeredPrincipal ?? { principal_id: legacyAuthorized ? "team-shared" : "unauthenticated-local", profile: profile as ProjectServerProfile, roles: [] };
+      if (requestPrincipal.profile === "project-resolve" && !canResolveConflicts(requestPrincipal)) {
+        json(res, 403, { error: "project-resolve requires project-owner or designated-resolver role" });
         return;
       }
 
@@ -146,11 +157,15 @@ export async function startLightweightProjectHttpServer(
         if (sessionId) {
           const session = sessions.get(sessionId);
           if (session) {
+            if (session.principal.principal_id !== requestPrincipal.principal_id) {
+              json(res, 403, { jsonrpc: "2.0", error: { code: -32003, message: "Session principal mismatch" }, id: requestId });
+              return;
+            }
             session.lastSeenAt = Date.now();
             transport = session.transport;
           }
         } else if (isInitializeRequest(body)) {
-          transport = await createSession();
+          transport = await createSession(requestPrincipal);
         }
         if (!transport) {
           json(res, sessionId ? 404 : 400, {
@@ -174,6 +189,10 @@ export async function startLightweightProjectHttpServer(
       const session = sessions.get(sessionId);
       if (!session) {
         json(res, 404, { jsonrpc: "2.0", error: { code: -32001, message: "Session not found" }, id: null });
+        return;
+      }
+      if (session.principal.principal_id !== requestPrincipal.principal_id) {
+        json(res, 403, { jsonrpc: "2.0", error: { code: -32003, message: "Session principal mismatch" }, id: null });
         return;
       }
       session.lastSeenAt = Date.now();

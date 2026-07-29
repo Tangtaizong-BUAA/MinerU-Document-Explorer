@@ -6,7 +6,7 @@ upstream cyj_mcp_home_primary {
     keepalive 8;
 }
 
-# Place this location in the TLS-enabled server block. The home project-admin
+# Place this location in the TLS-enabled server block. The home project-contribute
 # node is primary; Alibaba's project-read snapshot is an automatic fallback.
 location = /cyj/mcp {
     proxy_pass http://cyj_mcp_home_primary/mcp;

@@ -51,6 +51,14 @@ describe("Changyi Jiuan MCP profiles", () => {
     expect(toolNames(server)).not.toContain("query");
   });
 
+  it("uses project-contribute as the 0.5 team profile without direct canonical patch tools", async () => {
+    const server = await createMcpServer({} as never, { projectProfile: "project-contribute", projectDataDir: await projectRoot() });
+    expect(toolNames(server)).toContain("kb_finish_work");
+    expect(toolNames(server)).not.toContain("kb_update_main");
+    expect(toolNames(server)).not.toContain("kb_upsert_section");
+    expect(toolNames(server)).not.toContain("kb_submit_user_resolution");
+  });
+
   it("reserves source ingestion for the admin profile", async () => {
     const server = await createMcpServer({} as never, {
       projectProfile: "project-admin",

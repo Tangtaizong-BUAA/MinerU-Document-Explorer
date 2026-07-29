@@ -1,17 +1,18 @@
 services:
   changyi-jiuan-mcp:
-    image: changyi-jiuan-mcp:0.4.0
+    image: changyi-jiuan-mcp:0.5.0
     container_name: changyi-jiuan-mcp
     restart: unless-stopped
     init: true
     env_file:
       - /etc/changyi-jiuan-mcp.env
     environment:
-      CYJ_MCP_PROFILE: project-admin
+      CYJ_MCP_PROFILE: project-contribute
       CYJ_KB_ROOT: /data
       CYJ_MCP_HOST: 0.0.0.0
       CYJ_MCP_PORT: "8793"
       CYJ_PYTHON_BIN: /usr/local/bin/python3
+      CYJ_MAINTENANCE_PYTHON: /usr/local/bin/python3
     ports:
       - "127.0.0.1:8793:8793"
     volumes:
@@ -31,3 +32,29 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  changyi-jiuan-maintainer:
+    image: changyi-jiuan-mcp:0.5.0
+    container_name: changyi-jiuan-maintainer
+    restart: unless-stopped
+    init: true
+    env_file:
+      - /etc/changyi-jiuan-maintainer.env
+    environment:
+      CYJ_KB_ROOT: /data
+      CYJ_MAINTENANCE_PYTHON: /usr/local/bin/python3
+      CYJ_MAINTENANCE_MODEL: qwen3.7-flash
+      CYJ_DASHSCOPE_REGION: cn-beijing
+      CYJ_MAINTENANCE_MAX_COST_USD: "0.50"
+    command: ["node", "dist/cli/project-maintainer.js"]
+    volumes:
+      - /srv/changyi-jiuan-kb/data:/data
+    mem_limit: 1536m
+    memswap_limit: 2560m
+    cpus: 2.0
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777

@@ -1,6 +1,6 @@
 [Unit]
-Description=Changyi Jiuan Knowledge MCP (loopback only)
-After=network-online.target
+Description=Changyi Jiuan Knowledge Maintenance Worker
+After=network-online.target changyi-jiuan-mcp.service
 Wants=network-online.target
 
 [Service]
@@ -10,23 +10,24 @@ Group=changyi-kb
 WorkingDirectory=/opt/changyi-jiuan-mcp/app
 Environment=NODE_ENV=production
 Environment=HOME=/var/lib/changyi-kb
-Environment=CYJ_MCP_PROFILE=project-contribute
 Environment=CYJ_KB_ROOT=/var/lib/changyi-kb/data
-Environment=CYJ_PYTHON_BIN=/usr/bin/python3
 Environment=CYJ_MAINTENANCE_PYTHON=/usr/bin/python3
-EnvironmentFile=-/etc/changyi-jiuan-mcp.env
-ExecStart=/usr/local/bin/node /opt/changyi-jiuan-mcp/app/dist/cli/qmd.js mcp --http --port 8793
+Environment=CYJ_MAINTENANCE_MODEL=qwen3.7-flash
+Environment=CYJ_DASHSCOPE_REGION=cn-beijing
+Environment=CYJ_MAINTENANCE_MAX_COST_USD=0.50
+EnvironmentFile=-/etc/changyi-jiuan-maintainer.env
+ExecStart=/usr/local/bin/node /opt/changyi-jiuan-mcp/app/dist/cli/project-maintainer.js
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=15
+TimeoutStopSec=30
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/changyi-kb
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-MemoryMax=512M
-CPUQuota=50%
+MemoryMax=1536M
+CPUQuota=100%
 TasksMax=128
 
 [Install]

@@ -4,7 +4,7 @@
       "command": "qmd",
       "args": ["mcp"],
       "env": {
-        "CYJ_MCP_PROFILE": "project-maintain",
+        "CYJ_MCP_PROFILE": "project-contribute",
         "CYJ_KB_ROOT": "__ABSOLUTE_KNOWLEDGE_DATA_ROOT__"
       }
     }

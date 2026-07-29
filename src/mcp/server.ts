@@ -59,7 +59,7 @@ export async function createMcpServer(store: QMDStore, options: ProjectMcpOption
         "After Skill synchronization, call kb_brief: it returns the complete Agent-maintained project main file and section navigation.",
         "Use kb_graph_context to read a selected maintained section together with its linked artifacts.",
         "For names, numbers, versions, exact wording, or other verifiable detail, proactively run kb_search RAG and read the matching artifact; never answer detail from the main file alone.",
-        "Maintain long-lived project cognition with kb_update_main and kb_upsert_section under an active work item.",
+        "Contribute resources and distilled context; canonical main/section maintenance is performed asynchronously by the server harness.",
         "Use kb_start_work before a material task, kb_publish_resource for every durable output, kb_capture_context for distilled conversation knowledge, and kb_finish_work after it.",
         "Never leave the only copy of project-related output in chat or a client workspace.",
         "Memory promotion is policy-controlled; never claim quarantined evidence as established fact.",

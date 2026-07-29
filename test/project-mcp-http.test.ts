@@ -32,7 +32,7 @@ describe("Changyi Jiuan HTTP MCP", () => {
     const session = initialize.headers.get("mcp-session-id");
     expect(session).toBeTruthy();
     const initializeBody = await initialize.json() as { result: { serverInfo: { name: string; version: string } } };
-    expect(initializeBody.result.serverInfo).toEqual({ name: "changyi-jiuan-knowledge", version: "0.4.0" });
+    expect(initializeBody.result.serverInfo).toEqual({ name: "changyi-jiuan-knowledge", version: "0.5.0" });
     const listed = await fetch(endpoint, {
       method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": session! },
       body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
@@ -42,7 +42,7 @@ describe("Changyi Jiuan HTTP MCP", () => {
     expect(names).toContain("kb_brief");
     expect(names).toContain("kb_sync_skill");
     expect(names).not.toContain("kb_start_work");
-    expect(result.result.tools.find(tool => tool.name === "kb_brief")?._meta?.["cn.changyi-jiuan/client-contract"]?.required_skill?.version).toBe("0.4.0");
+    expect(result.result.tools.find(tool => tool.name === "kb_brief")?._meta?.["cn.changyi-jiuan/client-contract"]?.required_skill?.version).toBe("0.5.0");
 
     const sync = await fetch(endpoint, {
       method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": session! },
@@ -51,8 +51,8 @@ describe("Changyi Jiuan HTTP MCP", () => {
     const syncBody = await sync.json() as { result: { _meta: Record<string, any>; structuredContent: Record<string, any> } };
     expect(syncBody.result.structuredContent.status).toBe("update_required");
     expect(syncBody.result.structuredContent.delta.files.map((file: { path: string }) => file.path)).toContain("skill-version.json");
-    expect(syncBody.result.structuredContent._client_contract.required_skill.version).toBe("0.4.0");
-    expect(syncBody.result._meta["cn.changyi-jiuan/client-contract"].server_version).toBe("0.4.0");
+    expect(syncBody.result.structuredContent._client_contract.required_skill.version).toBe("0.5.0");
+    expect(syncBody.result._meta["cn.changyi-jiuan/client-contract"].server_version).toBe("0.5.0");
 
     const legacy = await fetch(`http://127.0.0.1:${server.port}/query`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ searches: [] }) });
     expect(legacy.status).toBe(404);
@@ -115,7 +115,7 @@ describe("Changyi Jiuan HTTP MCP", () => {
     expect(searched.result.content[0]!.text).toContain("Automatic closeout report");
   });
 
-  test("returns complete main context and reads a maintained section with linked artifact RAG", async () => {
+  test("keeps legacy main and section tools proposal-only over HTTP", async () => {
     const server = await start("project-admin");
     const endpoint = `http://127.0.0.1:${server.port}/mcp`;
     const initialize = await fetch(endpoint, {
@@ -141,7 +141,8 @@ describe("Changyi Jiuan HTTP MCP", () => {
     const initial = await call("kb_brief", { project_id: projectId });
     const initialRevision = initial.result.structuredContent.main_file.revision_hash;
     const mainMarkdown = "# HTTP Graph Main\n\nComplete project orientation.\n\n## Navigation\n\nUse the field section.\n";
-    await call("kb_update_main", { project_id: projectId, work_id: workId, markdown: mainMarkdown, expected_revision: initialRevision, change_summary: "Create main navigation" });
+    const mainProposal = await call("kb_update_main", { project_id: projectId, work_id: workId, markdown: mainMarkdown, expected_revision: initialRevision, change_summary: "Create main navigation" });
+    expect(mainProposal.result.structuredContent).toMatchObject({ status: "queued", migration_required: true });
     const published = await call("kb_publish_resource", {
       work_id: workId,
       resource: { title: "Field evidence", filename: "field.md", content_type: "text/markdown", encoding: "utf8", content: "# Field Evidence\n\nThe verified rendezvous is North Gate.\n", kind: "document" },
@@ -151,16 +152,12 @@ describe("Changyi Jiuan HTTP MCP", () => {
       project_id: projectId, work_id: workId, key: "field", title: "Field", summary: "Maintained field execution details",
       markdown: "# Field\n\nUse linked evidence for exact rendezvous details.\n", change_summary: "Create field section", artifact_refs: [artifactId],
     });
-    const sectionId = section.result.structuredContent.section_id;
+    expect(section.result.structuredContent).toMatchObject({ status: "queued", migration_required: true });
     const brief = await call("kb_brief", { project_id: projectId });
-    expect(brief.result.content[0]!.text).toContain(mainMarkdown.trim());
-    expect(brief.result.structuredContent.navigation.sections[0].id).toBe(sectionId);
-    const graph = await call("kb_graph_context", { node_id: sectionId, query: "verified rendezvous", artifact_mode: "excerpt", depth: 1, max_tokens: 1200 });
-    expect(graph.result.structuredContent.artifacts[0].id).toBe(artifactId);
-    expect(graph.result.content.some(item => item.type === "resource" && item.resource.text.includes("North Gate"))).toBe(true);
-    const searched = await call("kb_search", { query: "field execution details", top_k: 5 });
-    const hit = searched.result.structuredContent.results.find((item: { id: string }) => item.id === sectionId);
-    expect(hit.linked_artifacts[0].id).toBe(artifactId);
+    expect(brief.result.content[0]!.text).not.toContain(mainMarkdown.trim());
+    expect(brief.result.structuredContent.navigation.sections).toEqual([]);
+    const searched = await call("kb_search", { query: "verified rendezvous", top_k: 5 });
+    expect(searched.result.structuredContent.results.some((item: { id: string }) => item.id === artifactId)).toBe(true);
     await call("kb_finish_work", { work_id: workId, outcome: "completed", summary: "Hierarchy verified", result_hash: "http-graph-closeout-001", artifacts: [artifactId] });
   });
 });

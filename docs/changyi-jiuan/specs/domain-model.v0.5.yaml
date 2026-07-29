@@ -1,0 +1,323 @@
+spec: changyi-jiuan-domain-model
+version: 0.5.0
+status: implemented-offline-live-provider-gate-pending
+base_spec: domain-model.v0.1.yaml
+current_build_version: 0.5.0
+current_deployed_version: 0.4.0
+
+id_format: "<type>:<project-key>:<ulid-or-slug>"
+
+enums:
+  modality: [text, image, table, audio, video]
+  conflict_status: [open, resolution_pending, resolved]
+  typed_resolution_outcome:
+    - supersede_one_claim
+    - accept_multiple_claims_with_narrowed_scopes
+    - reject_all_claims_and_record_new_statement
+    - reject_candidate_claim
+    - remain_open
+  maintenance_plan_operation:
+    - no_change
+    - patch_main
+    - patch_section
+    - create_section
+    - update_topology
+    - register_conflict
+    - observe_conflict
+
+record_type_amendments:
+  project:
+    maintained_fields: [main_revision, section_refs, global_conflict_view]
+    protected_derived_fields: [global_conflict_view]
+  knowledge_section:
+    links: [child_section_refs, artifact_refs, related_refs, conflict_refs]
+    protected_derived_fields: [conflict_refs, conflict_view]
+  memory:
+    rules:
+      - automatic_promotion_is_for_non_conflicting_candidates_only
+      - disputed_memory_requires_locked_user_resolution_for_semantic_closure
+      - typed_resolution_does_not_force_superseded
+
+record_types:
+  evidence_unit:
+    statuses: [derived, verified, quarantined, stale]
+    required:
+      - artifact_id
+      - artifact_sha256
+      - modality
+      - locator
+      - content_fingerprint
+      - confidentiality
+    optional:
+      - excerpt
+      - asset_uri
+      - transcript_ref
+      - keyframe_refs
+    locator_fields:
+      - page
+      - slide
+      - section
+      - bbox
+      - sheet
+      - cell_range
+      - start_ms
+      - end_ms
+    rules:
+      - locator_must_be_valid_for_modality
+      - content_fingerprint_must_match_the_derived_content
+      - audio_requires_a_timestamped_transcript_supplied_by_an_authorized_adapter
+      - video_maintenance_requires_native_video_content_for_model_under_egress_policy
+      - keyframes_ocr_and_optional_transcript_are_retrieval_and_locator_aids_only
+      - native_video_must_not_be_claimed_when_only_keyframes_were_processed
+
+  conflict:
+    statuses: [open, resolution_pending, resolved]
+    required:
+      - topic
+      - claim_variants
+      - domain_refs
+      - artifact_refs
+      - impact
+      - severity
+      - suggested_user_question
+      - created_revision
+      - last_seen_revision
+    optional: [entity_refs, evidence_observations, resolution]
+    protected_fields:
+      - status
+      - claim_variants
+      - domain_refs
+      - entity_refs
+      - artifact_refs
+      - created_revision
+      - last_seen_revision
+      - evidence_observations
+      - resolution
+    rules:
+      - generic_document_or_topology_patch_cannot_modify_this_record
+      - register_conflict_can_only_create_an_open_record
+      - observe_conflict_is_a_proposal_not_a_direct_record_write
+      - append_conflict_evidence_only_adds_evidence_sources_and_last_seen_revision
+      - append_conflict_evidence_is_revision_locked_and_idempotent
+      - append_conflict_evidence_cannot_change_claim_meaning_status_or_resolution
+      - only_conflict_service_can_change_status
+      - source_priority_time_or_new_file_version_cannot_close_a_semantic_conflict
+      - history_and_references_are_monotonic
+      - resolved_records_remain_retrievable
+
+  user_conflict_resolution:
+    statuses: [submitted, locked, applied, insufficient, stale]
+    required:
+      - conflict_id
+      - expected_conflict_revision
+      - resolution_statement
+      - source_turn_ref
+      - user_statement_hash
+      - idempotency_key
+      - submitted_by_principal
+      - attestation_mode
+    optional: [named_actor_ref]
+    rules:
+      - client_agent_must_not_invent_or_expand_the_user_statement
+      - shared_token_uses_client_attested_and_team_principal
+      - statement_hash_proves_content_integrity_not_human_authorship
+      - named_actor_requires_verified_identity_claim_or_trusted_signed_user_event
+      - shared_token_cannot_be_recorded_as_a_named_actor
+      - submission_only_moves_conflict_to_resolution_pending
+      - lock_user_resolution_atomically_persists_the_record_moves_open_to_resolution_pending_and_enqueues_the_packet
+      - failed_lock_user_resolution_leaves_the_conflict_open
+      - only_owner_or_explicitly_designated_resolver_principal_may_submit
+      - non_resolver_user_reply_is_ephemeral_task_context_and_must_never_be_persisted
+
+  typed_conflict_resolution:
+    statuses: [proposed, validated, committed, rejected]
+    required:
+      - conflict_id
+      - locked_user_resolution_ref
+      - outcome
+      - affected_claim_refs
+      - resulting_scopes
+      - expected_revisions
+      - plan_hash
+    rules:
+      - remain_open_is_a_valid_outcome
+      - apply_typed_resolution_commits_document_topology_and_resolution_status_as_one_transaction
+      - remain_open_moves_resolution_pending_back_to_open
+      - original_claims_evidence_and_history_are_never_deleted
+
+  maintenance_change_packet:
+    statuses: [queued, leased, context_ready, stale, completed, quarantined, dead_letter]
+    required:
+      - packet_id
+      - project_id
+      - idempotency_key
+      - trigger
+      - base_revisions
+      - artifact_deltas
+      - evidence_refs
+      - routing
+      - limits
+      - egress_policy
+    optional: [locked_user_resolution_ref]
+
+  maintenance_plan:
+    statuses: [proposed, validated, rejected, committed, no_change]
+    required:
+      - packet_id
+      - base_knowledge_revision
+      - expected_topology_revision
+      - prompt_version
+      - tool_schema_version
+      - operations
+      - plan_hash
+    rules:
+      - conflict_protected_fields_are_not_writable
+      - model_output_has_no_commit_side_effect
+      - every_fact_patch_requires_evidence_refs
+
+  revision_manifest:
+    statuses: [published]
+    required:
+      - revision
+      - parent_revision
+      - packet_id
+      - plan_hash
+      - changed_records
+      - topology_revision
+      - topology_hash
+      - index_revision
+      - index_hash
+      - manifest_hash
+      - prompt_version
+      - model_id
+      - tool_schema_version
+      - audit_event_ids
+      - created_at
+    rules:
+      - revision_directory_is_immutable_after_publish
+      - manifest_hash_is_lowercase_hex_sha256_of_utf8_rfc8785_jcs_manifest_excluding_manifest_hash
+      - manifest_status_never_changes_after_publish
+      - current_or_superseded_is_derived_from_pointer_and_append_only_lifecycle_events
+      - current_pointer_is_the_only_atomically_replaced_publish_marker
+
+  knowledge_snapshot:
+    statuses: [building, ready, current, retired]
+    required:
+      - knowledge_revision
+      - topology_revision
+      - index_revision
+      - revision_manifest_ref
+      - built_at
+    rules:
+      - readers_pin_one_snapshot_for_the_entire_request
+      - snapshot_is_visible_only_after_all_referenced_files_and_indexes_are_ready
+
+  model_configuration:
+    statuses: [proposed, validated, active, retired]
+    required:
+      - provider
+      - region
+      - workspace_endpoint_ref
+      - api_dialect
+      - model_id
+      - credential_ref
+      - configuration_hash
+    rules:
+      - credential_value_is_never_stored
+      - region_endpoint_key_and_model_are_validated_as_one_tuple
+      - configuration_change_requires_a_new_index_or_prompt_evaluation_as_applicable
+
+relations:
+  has_conflict: { from: [project, knowledge_section, artifact, evidence, claim, memory], to: conflict }
+  conflict_variant: { from: conflict, to: [claim, memory] }
+  resolved_by: { from: conflict, to: user_conflict_resolution }
+  applies_resolution: { from: typed_conflict_resolution, to: conflict }
+  contains_evidence_unit: { from: artifact, to: evidence_unit }
+  generated_from_packet: { from: maintenance_plan, to: maintenance_change_packet }
+  published_as: { from: maintenance_plan, to: revision_manifest }
+  materializes: { from: knowledge_snapshot, to: revision_manifest }
+
+protected_write_contract:
+  generic_plan_forbidden_targets:
+    - conflict_record
+    - conflict_status
+    - conflict_refs
+    - global_conflict_view
+    - section_conflict_view
+  only_writers:
+    register_open_conflict: conflict_service
+    append_conflict_evidence: conflict_service
+    lock_user_resolution: conflict_service
+    apply_typed_resolution: conflict_service
+  physical_delete: forbidden
+
+conflict_service:
+  semantic_states: [open, resolution_pending, resolved]
+  only_state_change_transactions:
+    - register_open_conflict
+    - lock_user_resolution
+    - apply_typed_resolution
+  non_state_change_transactions:
+    - append_conflict_evidence
+  append_conflict_evidence_contract:
+    required: [conflict_id, expected_conflict_revision, target_claim_variant_refs, evidence_refs, source_refs, idempotency_key]
+    may_change: [evidence_observations, last_seen_revision]
+    forbidden: [claim_meaning, status, resolution]
+    validation:
+      - target_claim_variants_exist_in_the_conflict
+      - evidence_and_source_refs_exist_and_belong_to_the_same_project
+      - evidence_fingerprint_matches_and_confidentiality_is_valid
+      - counterevidence_against_a_resolved_resolution_is_rejected_from_append
+      - rejected_resolved_counterevidence_registers_a_new_open_conflict_referencing_the_prior_conflict_and_resolution
+  typed_resolution_outcomes:
+    - supersede_one_claim
+    - accept_multiple_claims_with_narrowed_scopes
+    - reject_all_claims_and_record_new_statement
+    - reject_candidate_claim
+    - remain_open
+  history_and_refs_are_monotonic: true
+
+canonical_revision_layout:
+  staging: "knowledge/staging/<commit-id>/"
+  immutable_revision: "knowledge/revisions/<knowledge-revision>/"
+  immutable_index: "knowledge/indexes/<index-revision>/"
+  current_pointer: "knowledge/current-revision.json"
+  current_pointer_schema:
+    required: [knowledge_revision, topology_revision, index_revision, manifest_hash]
+    rules:
+      - all_referenced_revisions_and_hashes_must_validate_before_publish
+      - pointer_is_read_once_and_pinned_for_the_request
+  publish_algorithm:
+    - build_complete_revision_and_index_directories
+    - validate_files_topology_conflicts_and_indexes
+    - fsync_revision_and_index_files_and_directories
+    - write_and_fsync_temporary_current_pointer
+    - atomic_rename_current_pointer
+    - fsync_parent_directory
+    - swap_in_memory_knowledge_snapshot
+  recovery:
+    - ignore_staging_without_a_current_pointer
+    - rebuild_snapshot_from_the_current_pointer
+    - rollback_by_publishing_a_compensating_revision
+
+maintenance_budget_v1:
+  max_tool_calls: 8
+  max_cumulative_input_tokens: 12000
+  max_context_tokens_per_step: 6000
+  max_cumulative_output_tokens: 3000
+  max_sections: 6
+  max_evidence_units: 40
+  max_multimodal_assets: 12
+  max_normal_generations: 1
+  max_schema_repairs: 1
+  event_merge_window_seconds: [60, 120]
+  semantic_calibration:
+    interval_days: 7
+    revision_threshold: 20
+    scope: one_domain
+  rules:
+    - token_limits_are_accumulated_from_provider_usage_across_the_entire_loop
+    - per_packet_cost_limit_is_required_from_deployment_configuration
+    - missing_or_predicted_over_budget_fails_closed
+    - calibration_without_drift_returns_no_change
+    - full_library_rewrite_is_forbidden

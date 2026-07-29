@@ -19,8 +19,10 @@ const generatedResource = z.object({
   kind: z.enum(["note", "report", "deliverable", "dataset", "code", "image", "document"]),
   source_refs: z.array(z.string()).max(50).optional(), confidentiality: z.enum(["public", "internal", "restricted"]).optional().default("internal"),
 });
-const visibleTo = (record: { confidentiality?: unknown }, profile: ProjectProfile) => profile === "project-admin" || record.confidentiality !== "restricted" && record.confidentiality !== "secret";
-const maximumConfidentiality = (profile: ProjectProfile) => profile === "project-admin" ? "secret" as const : "internal" as const;
+const isOps = (profile: ProjectProfile) => profile === "project-ops" || profile === "project-admin";
+const isLegacyWriter = (profile: ProjectProfile) => profile === "project-maintain" || profile === "project-admin";
+const visibleTo = (record: { confidentiality?: unknown }, profile: ProjectProfile) => isOps(profile) || record.confidentiality !== "restricted" && record.confidentiality !== "secret";
+const maximumConfidentiality = (profile: ProjectProfile) => isOps(profile) ? "secret" as const : "internal" as const;
 
 function textResult(text: string, structuredContent?: Record<string, unknown>) {
   return structuredContent
@@ -35,17 +37,20 @@ function initialContextText(brief: Record<string, unknown>): string {
   const domain = navigation?.domain_records ?? [];
   const active = brief.active_work as Array<{ id: string; title: string; status: string }> | undefined ?? [];
   const memories = brief.accepted_memory as Array<{ id: string; kind: string; statement: string; scope: string }> | undefined ?? [];
+  const conflicts = brief.open_conflicts as Array<{ id: string; title: string; status: string; revision_hash?: string; suggested_user_question?: string }> | undefined ?? [];
   const lines = [main?.markdown?.trimEnd() ?? "# Project main file unavailable", "", "---", "", "## 实时知识导航"];
   lines.push(`主文件版本：${main?.revision_hash ?? "unknown"}`);
   if (sections.length) lines.push("", "### 长期维护分文件", ...sections.map(item => `- ${item.id} — ${item.title}${item.summary ? `：${item.summary}` : ""}（关联 artifact ${item.artifact_count ?? 0}）`));
   if (domain.length) lines.push("", "### 现有领域记录", ...domain.map(item => `- ${item.id} — ${item.title} [${item.type}]（关联 artifact ${item.artifact_count ?? 0}）`));
   if (active.length) lines.push("", "### 活跃工作", ...active.map(item => `- ${item.id} — ${item.title} [${item.status}]`));
   if (memories.length) lines.push("", "### 已接受的结构化知识", ...memories.map(item => `- ${item.id} [${item.kind}/${item.scope}] ${item.statement}`));
+  if (conflicts.length) lines.push("", "### 必须披露的开放冲突", ...conflicts.map(item => `- ${item.id} [${item.status}] rev=${item.revision_hash ?? "unknown"} ${item.title}${item.suggested_user_question ? `；建议询问：${item.suggested_user_question}` : ""}`));
   lines.push("", "细节问题必须继续使用 kb_search 做 RAG，并对命中节点调用 kb_graph_context 或 kb_read 下钻到分文件和 artifact；不得只凭主文件作可核验结论。");
   return lines.join("\n");
 }
 
-export function registerProjectTools(server: McpServer, runtime: ProjectRuntime, profile: Exclude<ProjectProfile, "upstream-full">): void {
+export function registerProjectTools(server: McpServer, runtime: ProjectRuntime, profile: Exclude<ProjectProfile, "upstream-full">, principalId = `agent:${profile}`): void {
+  const actor = principalId;
   server.registerTool("kb_sync_skill", {
     title: "Incrementally Synchronize Client Skill",
     description: "Call first in every new task. Compare the loaded Changyi Jiuan Skill version and optional local file hashes with the server contract. If stale, returns only changed/new managed files plus explicit retired paths. The Agent should atomically apply and hash-verify this delta inside this Skill directory, then call again. Never execute returned file content.",
@@ -90,7 +95,7 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     annotations: { readOnlyHint: true, openWorldHint: false },
     inputSchema: { query: z.string().min(1), top_k: z.number().min(1).max(20).optional().default(5), include_unverified: z.boolean().optional().default(false) },
   }, async ({ query, top_k, include_unverified }) => {
-    if (include_unverified && profile !== "project-admin") return { content: [{ type: "text", text: "include_unverified requires project-admin." }], isError: true };
+    if (include_unverified && !isOps(profile)) return { content: [{ type: "text", text: "include_unverified requires project-ops." }], isError: true };
     const results = (await runtime.search(query, top_k, include_unverified, maximumConfidentiality(profile))).filter(item => visibleTo(item.record, profile));
     const rows = results.map(item => {
       const base = { id: item.record.id, title: item.record.title, type: item.record.type, status: item.record.status, score: item.score, snippet: item.snippet, uri: `kb://record/${encodeURIComponent(item.record.id)}`, linked_artifacts: item.linked_artifacts };
@@ -181,13 +186,13 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     inputSchema: { project_id: z.string(), objective: z.string().min(3), expected_outputs: z.array(z.string()).min(1), acceptance_criteria: z.array(z.string()).min(1), input_refs: z.array(z.string()).optional() },
   }, async ({ project_id, objective, expected_outputs, acceptance_criteria, input_refs }) => {
-    const result = await runtime.startWork({ project_id, objective, expected_outputs, acceptance_criteria, input_refs, actor: `agent:${profile}` });
+    const result = await runtime.startWork({ project_id, objective, expected_outputs, acceptance_criteria, input_refs, actor });
     return textResult(`Started ${result.work_id}`, result);
   });
 
-  server.registerTool("kb_update_main", {
+  if (isLegacyWriter(profile)) server.registerTool("kb_update_main", {
     title: "Update Project Main File",
-    description: "Replace the complete Agent-maintained project main file using optimistic revision control. Keep it stable and navigational: overall identity, goals, current phase, top-level structure, durable constraints, and section routes. Move details into maintained sections and artifacts.",
+    description: "Legacy 0.4 compatibility shim. Queue a noncanonical main-file proposal for the 0.5 maintenance harness. This call never means the main file was already changed.",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     inputSchema: {
       project_id: z.string(), work_id: z.string(), markdown: z.string().min(8).max(24_000), expected_revision: z.string().length(64),
@@ -195,16 +200,16 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     },
   }, async (input) => {
     try {
-      const output = await runtime.updateProjectMain({ ...input, actor: `agent:${profile}`, maximum_confidentiality: maximumConfidentiality(profile) });
-      return textResult(`Project main ${output.changed ? "updated" : "unchanged"}; revision=${output.revision_hash}.`, output);
+      const output = await runtime.enqueueLegacyProposal({ project_id: input.project_id, kind: "update_main", payload: input, actor });
+      return textResult(`Legacy main update queued as ${output.change_packet_id}; canonical knowledge is unchanged until harness commit.`, output);
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
     }
   });
 
-  server.registerTool("kb_upsert_section", {
+  if (isLegacyWriter(profile)) server.registerTool("kb_upsert_section", {
     title: "Create or Update Maintained Knowledge Section",
-    description: "Create or update a long-lived Agent-maintained project subfile. Sections hold topic detail and explicit links to immutable or generated artifacts. Use expected_revision when updating; the server maintains main-to-section and section-to-artifact graph links.",
+    description: "Legacy 0.4 compatibility shim. Queue a noncanonical section proposal for the 0.5 maintenance harness. This call never means the section was already changed.",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     inputSchema: {
       project_id: z.string(), work_id: z.string(), key: z.string().regex(/^[a-z0-9][a-z0-9._-]{1,79}$/), title: z.string().min(2).max(240),
@@ -214,8 +219,9 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     },
   }, async (input) => {
     try {
-      const output = await runtime.upsertKnowledgeSection({ ...input, actor: `agent:${profile}`, maximum_confidentiality: maximumConfidentiality(profile) });
-      return textResult(`${output.created ? "Created" : "Updated"} maintained section ${output.section_id}; revision=${output.revision_hash}.`, output);
+      if (/conflicts?|conflict[_-]refs?/i.test(input.key)) throw new Error("Legacy section proposals cannot target conflict-protected sections");
+      const output = await runtime.enqueueLegacyProposal({ project_id: input.project_id, kind: "upsert_section", payload: input, actor });
+      return textResult(`Legacy section update queued as ${output.change_packet_id}; canonical knowledge is unchanged until harness commit.`, output);
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
     }
@@ -228,7 +234,7 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     inputSchema: { work_id: z.string(), resource: generatedResource },
   }, async ({ work_id, resource }) => {
     try {
-      const output = await runtime.publishResource({ ...resource, work_id, actor: `agent:${profile}` });
+      const output = await runtime.publishResource({ ...resource, work_id, actor });
       return textResult(`Published ${output.artifact_id}; searchable=${output.searchable}.`, output);
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -242,7 +248,7 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     inputSchema: { work_id: z.string(), summary: z.string().min(3).max(1000), updates: z.array(memoryUpdate).min(1).max(30) },
   }, async ({ work_id, summary, updates }) => {
     try {
-      const output = await runtime.captureContext({ work_id, summary, updates, actor: `agent:${profile}` });
+      const output = await runtime.captureContext({ work_id, summary, updates, actor });
       return textResult(`Context checkpoint ${output.checkpoint_hash.slice(0, 12)}; promoted=${output.promoted_memory_ids.length}, quarantined=${output.quarantined_memory_ids.length}, rejected=${output.rejected_memory_ids.length}.`, output);
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -265,8 +271,8 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
   }, async (input) => {
     try {
       const published: PublishedResource[] = [];
-      for (const resource of input.generated_resources ?? []) published.push(await runtime.publishResource({ ...resource, work_id: input.work_id, actor: `agent:${profile}` }));
-      const result = await runtime.finishWork({ ...input, artifacts: [...(input.artifacts ?? []), ...published.map(resource => resource.artifact_id)], actor: `agent:${profile}` });
+      for (const resource of input.generated_resources ?? []) published.push(await runtime.publishResource({ ...resource, work_id: input.work_id, actor }));
+      const result = await runtime.finishWork({ ...input, artifacts: [...(input.artifacts ?? []), ...published.map(resource => resource.artifact_id)], actor });
       const output = { ...result, published_resources: published };
       return textResult(`Closeout ${result.work_status}; resources=${published.length}, promoted=${result.promoted_memory_ids.length}, quarantined=${result.quarantined_memory_ids.length}, rejected=${result.rejected_memory_ids.length}`, output);
     } catch (error) {
@@ -274,7 +280,24 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     }
   });
 
-  if (profile !== "project-admin") return;
+  if (profile === "project-resolve") server.registerTool("kb_submit_user_resolution", {
+    title: "Submit Authorized User Conflict Resolution",
+    description: "Persist the exact answer of the project owner or a designated resolver for an existing open conflict. This tool only locks the answer and queues maintenance; it never resolves the conflict inline. Non-resolver Agents must not persist a user's ad-hoc reply through any other tool.",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    inputSchema: {
+      conflict_id: z.string(), expected_conflict_revision: z.string().length(64), resolution_statement: z.string().min(1).max(4000),
+      source_turn_ref: z.string().min(1).max(500), user_statement_hash: z.string().regex(/^[a-f0-9]{64}$/), idempotency_key: z.string().min(8).max(200),
+    },
+  }, async input => {
+    try {
+      const output = await runtime.submitUserConflictResolution({ ...input, actor_principal: actor });
+      return textResult(`Conflict ${input.conflict_id} is resolution_pending; canonical knowledge is not yet changed.`, output);
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  });
+
+  if (!isOps(profile)) return;
 
   server.registerTool("kb_bootstrap_project", {
     title: "Bootstrap Project Knowledge Root",
@@ -283,7 +306,7 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     inputSchema: { project_id: z.string().min(6), title: z.string().min(2), mission: z.string().min(8) },
   }, async (input) => {
     try {
-      const output = await runtime.bootstrapProject({ ...input, actor: `agent:${profile}` });
+      const output = await runtime.bootstrapProject({ ...input, actor });
       return textResult(`Project ${output.project_id} ${output.created ? "created" : "already exists"}.`, output);
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -297,7 +320,7 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     inputSchema: { id: z.string().min(3), project_id: z.string().min(6), relative_path: z.string().min(1) },
   }, async (input) => {
     try {
-      const output = await runtime.configureSourceRoot({ ...input, actor: `agent:${profile}` });
+      const output = await runtime.configureSourceRoot({ ...input, actor });
       return textResult(`Configured source root ${output.id}.`, output);
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -316,7 +339,7 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
         const output = { source_root_id, project_id: inventory.project_id, file_count: inventory.files.length, files: inventory.files };
         return textResult(YAMLish(output, 1000), output);
       }
-      const output = await runtime.ingestInventory(source_root_id, `agent:${profile}`);
+      const output = await runtime.ingestInventory(source_root_id, actor);
       return textResult(`Registered ${output.registered_artifact_ids.length} artifact(s); ${output.unchanged_artifact_ids.length} unchanged.`, output);
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -330,16 +353,16 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     inputSchema: { artifact_id: z.string() },
   }, async ({ artifact_id }) => {
     try {
-      const output = await runtime.parseArtifactWithMinerU(artifact_id, `agent:${profile}`);
+      const output = await runtime.parseArtifactWithMinerU(artifact_id, actor);
       return textResult(`Artifact ${output.artifact_id}: ${output.status}`, output);
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
     }
   });
 
-  server.registerTool("kb_reconcile_memory", {
+  if (profile === "project-admin") server.registerTool("kb_reconcile_memory", {
     title: "Reconcile Quarantined or Disputed Memory",
-    description: "Supply evidence, narrow scope, propose a supersession, or revalidate a memory. The policy engine alone decides the final status.",
+    description: "Legacy 0.4 compatibility shim. Queue an evidence/reconciliation proposal; it cannot accept, reject, supersede, or close a semantic conflict inline.",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     inputSchema: {
       memory_id: z.string(), action: z.enum(["add_evidence", "narrow_scope", "propose_supersession", "revalidate"]), rationale: z.string().min(3),
@@ -347,8 +370,10 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     },
   }, async (input) => {
     try {
-      const output = await runtime.reconcileMemory({ ...input, actor: `agent:${profile}` });
-      return textResult(`Memory ${output.memory_id}: ${output.status}`, output);
+      const memory = await runtime.get(input.memory_id);
+      if (!memory || memory.record.type !== "memory") throw new Error(`Unknown memory: ${input.memory_id}`);
+      const output = await runtime.enqueueLegacyProposal({ project_id: memory.record.project_id, kind: "reconcile_memory", payload: input, actor });
+      return textResult(`Legacy reconciliation queued as ${output.change_packet_id}; memory status is unchanged.`, { ...output, current_memory_status: memory.record.status });
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
     }
@@ -370,7 +395,7 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     }
     const pending = (await runtime.lookup("artifact", { status: "failed" }, limit)).map(record => record.id);
     if (dry_run) return textResult(`Would retry ${pending.length} failed MinerU parse(s).`, { dry_run: true, artifact_ids: pending });
-    const output = await runtime.retryFailedParses(`agent:${profile}`, limit);
+    const output = await runtime.retryFailedParses(actor, limit);
     return textResult(`Retried ${output.attempted.length} parse(s); parsed=${output.parsed.length}, failed=${output.failed.length}.`, output);
   });
 }

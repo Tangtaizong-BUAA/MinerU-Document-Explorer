@@ -1,5 +1,7 @@
 # 02 目标架构
 
+> 0.5.0 修订说明：服务器维护 Agent、冲突闭合、多模态检索和当前生产拓扑以 [11-v0.5-product-technology-stack.md](11-v0.5-product-technology-stack.md) 为准；本文保留其余基础分层。
+
 ## 1. 架构摘要
 
 目标系统在上游 MinerU Document Explorer 的索引、精读、Wiki 和 MCP 能力之上，增加项目领域层、摄取与来源层、低 token 门面和记忆治理层。
@@ -117,8 +119,9 @@ flowchart LR
 
 - `upstream-full`：保留上游工具，供开发调试；
 - `project-read`：查询子 Agent 的精简只读接口；
-- `project-maintain`：Qoder、Hermes Agent、Codex 编排器的默认工作与回传接口；
-- `project-admin`：治理/运维 Agent 的摄取、修复、重校验和重建接口，不提供强制接受旁路。
+- `project-contribute`：Qoder、Hermes Agent、Codex 编排器的默认工作与回传接口；
+- `project-resolve`：只授予项目负责人和指定负责人的冲突答案锁定接口；
+- `project-ops`：家庭 loopback 治理/运维身份的摄取、修复、重校验和重建接口，不提供语义裁决旁路。`project-maintain/project-admin` 仅为 0.4 proposal-only 兼容别名。
 
 所有项目工具响应绑定同一服务/Skill 版本契约。Agent 每个新任务先比较本地 manifest，仅请求变化文件；服务端不远程执行客户端命令，也不传整包覆盖未变化文件。该机制让工作流说明可随 MCP 服务演进，同时保留客户端沙箱、哈希校验和新任务生效边界。
 
@@ -177,7 +180,8 @@ Agent 完成工作项
   → 校验工作项、文件、哈希和来源
   → 去重与冲突检测
   → 候选记忆
-  → 策略引擎自动接受、隔离或拒绝
+  → 策略引擎对无冲突候选自动接受、隔离或拒绝
+  → 冲突只登记和路由，等待用户明确答案
   → 治理 Agent 对隔离项补证并重校验
   → 更新领域记录/简报/时间线
   → 增量重建索引并追加审计

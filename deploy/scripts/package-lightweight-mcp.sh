@@ -10,13 +10,15 @@ npm run build
 rm -rf "$OUTPUT_DIR"
 install -d "$OUTPUT_DIR/dist/cli" "$OUTPUT_DIR/dist/mcp/tools" "$OUTPUT_DIR/dist/backends/python"
 cp deploy/home/Dockerfile deploy/home/package.json deploy/home/package-lock.json deploy/home/requirements.txt "$OUTPUT_DIR/"
-cp dist/cli/project-mcp-http.js "$OUTPUT_DIR/dist/cli/"
+cp dist/cli/project-mcp-http.js dist/cli/project-maintainer.js "$OUTPUT_DIR/dist/cli/"
 cp dist/mcp/project-http-server.js dist/mcp/project-resource.js dist/mcp/project-versioning.js "$OUTPUT_DIR/dist/mcp/"
 cp dist/mcp/tools/project.js "$OUTPUT_DIR/dist/mcp/tools/"
 cp -R dist/project "$OUTPUT_DIR/dist/"
 cp dist/doc-reading-config.js "$OUTPUT_DIR/dist/"
 cp dist/backends/python-utils.js dist/backends/python-types.js "$OUTPUT_DIR/dist/backends/"
-cp dist/backends/python/extract_pdf_mineru.py "$OUTPUT_DIR/dist/backends/python/"
+cp -R dist/backends/python/. "$OUTPUT_DIR/dist/backends/python/"
+find "$OUTPUT_DIR" -type d -name __pycache__ -prune -exec rm -rf {} +
+find "$OUTPUT_DIR" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 
 (
   cd "$OUTPUT_DIR"

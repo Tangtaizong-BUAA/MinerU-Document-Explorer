@@ -12,7 +12,7 @@ describe("Changyi Jiuan incremental client Skill synchronization", () => {
   test("returns a file-level legacy upgrade with verifiable safe paths", () => {
     const result = syncProjectSkill({ client: "codex", installed_version: "0.3.0" });
     expect(result.status).toBe("update_required");
-    expect(result.target_version).toBe("0.4.0");
+    expect(result.target_version).toBe("0.5.0");
     expect(result.delta.bundle_sha256).toBe(PROJECT_SKILL_BUNDLE_SHA256);
     expect(result.delta.files.map(file => file.path)).toEqual([
       "SKILL.md",
@@ -63,12 +63,12 @@ describe("Changyi Jiuan incremental client Skill synchronization", () => {
   test("rejects traversal and absolute paths reported by a client", () => {
     expect(() => syncProjectSkill({
       client: "generic",
-      installed_version: "0.4.0",
+      installed_version: "0.5.0",
       installed_files: [{ path: "../other-skill/SKILL.md", sha256: "0".repeat(64) }],
     })).toThrow("unsafe relative path");
     expect(() => syncProjectSkill({
       client: "generic",
-      installed_version: "0.4.0",
+      installed_version: "0.5.0",
       installed_files: [{ path: "C:\\skills\\SKILL.md", sha256: "0".repeat(64) }],
     })).toThrow("unsafe relative path");
   });

@@ -1,6 +1,6 @@
 # ADR-0003：Agent 记忆采用候选、校验和晋升流程
 
-- 状态：Accepted
+- 状态：Accepted；事实冲突闭合部分由 [ADR-0005](0005-server-maintenance-agent-harness.md) 修订
 - 日期：2026-07-21
 
 ## 背景
@@ -58,3 +58,7 @@
 ## 不提供强制接受旁路
 
 MCP 不提供 `force_accept`。治理 Agent 只能补充证据、请求重新校验、限定作用域或提交取代关系，最终状态仍由策略引擎计算并生成 validation event。
+
+## 0.5.0 修订
+
+上述自动晋升仅适用于没有形成事实冲突的候选。候选一旦与 accepted 知识形成语义冲突，策略引擎只能登记、隔离、路由和披露，不能依据来源排序或补证自行 supersede。冲突关闭必须来自明确的用户答案，并经过 revision、幂等和原义传播校验；详见 [ADR-0005](0005-server-maintenance-agent-harness.md)。

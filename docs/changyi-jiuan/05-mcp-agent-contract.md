@@ -1,5 +1,9 @@
 # 05 MCP 与 Agent 契约
 
+> 版本说明：本文描述 0.4 已实现工具面。0.5 将 canonical 文档写入收口到内部维护 Worker，并新增用户冲突答案工具；在代码、机器可读 spec 和 Skill 同步升级前，这些目标能力不得声称已上线。目标契约见 [11-v0.5-product-technology-stack.md](11-v0.5-product-technology-stack.md)。
+>
+> 0.5 机器可读目标：[specs/mcp-surface.v0.5.yaml](specs/mcp-surface.v0.5.yaml)。0.4 历史 spec 保留，不原地改写。
+
 ## 1. 目标
 
 MCP 层不是把数据库所有功能原样暴露给模型，而是提供最小、稳定、可审计的项目能力。设计同时优化：
@@ -23,11 +27,20 @@ MCP 层不是把数据库所有功能原样暴露给模型，而是提供最小�
 
 ### `project-maintain`
 
-Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` 基础上增加主文件/分文件版本化维护、工作项开始、资源归档、结果回传和候选记忆提交。不能直接接受记忆；`kb_finish_work` 会触发服务端自动策略裁决。
+Qoder、Hermes Agent 和 Codex 编排器的 0.4 默认 profile。在 `project-read` 基础上增加主文件/分文件版本化维护、工作项开始、资源归档、结果回传和候选记忆提交。不能直接接受记忆；`kb_finish_work` 会触发服务端自动策略裁决。0.5 迁移完成后，团队客户端以提交 Artifact、context、closeout 和用户答案为主，主/分文件直接写工具不再作为默认公网能力。
 
 ### `project-admin`
 
 供摄取、治理和运维 Agent 使用，增加摄取、隔离修复、重校验、重建和健康检查。该 profile 仍受项目根目录和策略约束，不提供 `force_accept`、原件物理删除或审计清空。
+
+### 0.5 目标 profile（尚未发布）
+
+- `project-contribute`：团队默认 profile；在 `project-read` 上只增加 work、resource、context 和 closeout。
+- `project-resolve`：在具备冲突解决 capability 的身份上增加 `kb_submit_user_resolution`。
+- `project-ops`：只在家庭 loopback 或受限 service principal 上提供 bootstrap、ingest、parse 和 health/rebuild；不经团队默认公网入口暴露。
+- internal maintenance Worker 不走 MCP，直接复用 application services。
+
+0.5 发布时，legacy `project-maintain` 只能成为 `project-contribute` 的兼容别名，legacy `project-admin` 只能成为家庭 loopback 的 `project-ops` 兼容别名。为承接已经载入 0.4 Skill 的在途任务，旧工具名可保留一个完整 Skill 发布窗口，但只能把请求转换为 ChangePacket proposal，返回 `migration_required`、packet ID、当前 revision 和弃用元数据；不得直接写 canonical、改变 memory 状态或声称更新已经生效。新 Skill 从下一任务/重启生效，shim 在声明窗口内无调用后才移除。
 
 ## 3. 首期外部工具面
 
@@ -217,15 +230,23 @@ Agent 资源是持久材料但不是自动验证的事实证据。工具拒绝�
 
 ### 3.15 `kb_reconcile_memory`
 
-用途：治理 Agent 为 `quarantined/disputed` 记忆补充证据、限定作用域、提交取代关系或请求重新校验。
+用途：治理 Agent 为 `quarantined/disputed` 记忆补充证据、限定作用域、提交非冲突记录的版本取代关系或请求重新校验。
 
 输入：memory ID、`action: add_evidence/narrow_scope/propose_supersession/revalidate`、证据引用、理由和幂等键。
 
 输出：策略引擎重新计算后的状态、policy trace、冲突关系和后续补证工作项。
 
-该工具不能指定最终接受结果；不存在 `force_accept`。
+该工具不能指定最终接受结果；不存在 `force_accept`。对于已经登记的事实冲突，补证、重新校验和 `propose_supersession` 均不得关闭冲突。它们只能生成绑定 `target_claim_variant_refs`、revision-locked、幂等的 evidence observation；`ConflictService.append_conflict_evidence` 必须验证 evidence/source 存在、同项目、指纹与密级后，才可单调追加 evidence/source 与 `last_seen_revision`，不得改 claim 原义、status 或 resolution。若 resolved 冲突出现反驳旧 resolution 的新证据，必须新建引用旧记录的 open 冲突，不能静默 append 后继续标 resolved。
 
-### 3.16 `kb_maintain`
+### 3.16 `kb_submit_user_resolution`（0.5 目标，尚未实现）
+
+用途：本地 Agent 把用户对某个事实冲突的明确回答作为受约束事件提交给服务端，而不是自行改写主/分文件。
+
+输入：conflict ID、期望 conflict revision、用户回答、原话哈希、来源任务/对话引用和幂等键。服务端必须能证明调用方具备冲突解决 capability；共享 token 下只能记录 `client_attested` 与团队 principal，不能伪装成实名身份。原话哈希只证明提交后的内容完整性，不能证明某位人类确实说过；实名模式必须依赖可验证身份 claim 或可信客户端签名事件。
+
+输出：`resolution_pending` 记录和 ChangePacket ID。成功调用必须由 `lock_user_resolution` 原子保存 resolution record、执行 `open -> resolution_pending` 并入队；任一步失败均保持 open。只有 `apply_typed_resolution` 将 typed outcome 与维护文档/拓扑补丁同事务提交后，冲突才变为 `resolved`，或在 `remain_open` 时退回 `open`。typed outcome 可表达单方取代、双方按 scope 同时成立、双方否定、候选拒绝或继续开放；工具不强迫选边，也不提供让 Agent 代替用户回答的参数。ConflictRecord、状态、`conflict_refs` 和冲突摘要只能由专用服务维护，通用文档/拓扑补丁无权写入。
+
+### 3.17 `kb_maintain`
 
 用途：运维 Agent 执行健康检查、隔离队列重试、派生索引重建、备份和恢复验证。
 
@@ -329,11 +350,11 @@ kb://memory/<memory-id>
 
 | 客户端 | 默认传输 | 默认 profile | 必测闭环 |
 |---|---|---|---|
-| Qoder | stdio | `project-maintain` | capability discovery、资源读取、工作回传、自动 closeout |
-| Hermes Agent | stdio；共享服务时 localhost HTTP | `project-maintain` | 结构化输出、并发幂等、失败重试、自动 closeout |
-| Codex | stdio | `project-maintain` | tool/resource 调用、最小上下文、工作回传、自动 closeout |
+| Qoder | stdio/HTTPS | `project-contribute` | capability discovery、资源读取、工作回传、自动 closeout |
+| Hermes Agent | stdio/HTTPS | `project-contribute` | 结构化输出、并发幂等、失败重试、自动 closeout |
+| Codex | stdio/HTTPS | `project-contribute` | tool/resource 调用、最小上下文、工作回传、自动 closeout |
 
-治理/摄取/运维任务由编排器以独立 `project-admin` 服务身份启动，不因客户端品牌自动获得管理能力。每个客户端必须同时支持：
+治理/摄取/运维任务由家庭节点以独立 `project-ops` service principal 启动，不因客户端品牌自动获得管理能力；`project-resolve` 只按人员授权。每个客户端必须同时支持：
 
 - MCP 初始化与 capability discovery；
 - 文本摘要兜底、`structuredContent` 和 resource link；

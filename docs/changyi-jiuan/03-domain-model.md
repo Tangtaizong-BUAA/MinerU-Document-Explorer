@@ -295,4 +295,20 @@ validation event 只追加不覆盖。重新校验生成新事件，当前状态
 - 关系目标不存在时报告 broken link，不自动造事实；
 - 保密级别不能因派生或摘要而自动降低。
 
-机器可读草案见 [specs/domain-model.v0.1.yaml](specs/domain-model.v0.1.yaml)。
+机器可读历史草案见 [specs/domain-model.v0.1.yaml](specs/domain-model.v0.1.yaml)。
+
+## 8. 0.5 领域模型增量
+
+0.5 保留上述基础记录，新增以下机器可验证对象：
+
+- **`evidence_unit`**：统一表达文字、图片、表格、音频转写、原生视频片段和视频关键帧，必须绑定 Artifact 哈希、modality-specific locator、内容指纹与 `native_video_understood` 标志；
+- **`conflict`**：一等 canonical 记录，状态为 `open/resolution_pending/resolved`，保存多种主张、证据、领域、影响和用户问题；
+- **`user_conflict_resolution`**：锁定用户回答、原话哈希、来源任务、期望 conflict revision、提交 principal 和 attestation mode；共享 token 只能记为 `client_attested/team-principal`，原话哈希不证明人类作者身份；
+- **`typed_conflict_resolution`**：表达单方取代、双方按 scope 同时成立、双方否定、候选拒绝或继续开放，不能把所有答案强制映射为 superseded；
+- **`maintenance_change_packet` / `maintenance_plan`**：把变化证据与模型提出的结构化整理计划分开，模型输出没有提交副作用；
+- **`revision_manifest` / `knowledge_snapshot`**：不可变 revision 目录、单 current pointer 和请求级固定 snapshot 的发布契约；
+- **`model_configuration`**：把供应商、地域、Workspace endpoint、API dialect、模型 ID 和 credential reference 作为一个版本化配置 tuple。
+
+`knowledge_section` 增加 `conflict_refs`，但 ConflictRecord、冲突状态、`conflict_refs` 和冲突派生视图均为 Harness 保护字段。通用文档/拓扑补丁不能修改、删除、隐藏或断开它们；只有 ConflictService 能登记新 `open` 冲突、追加受约束 evidence observation、锁定用户答案或提交 typed resolution。补证必须绑定目标 claim variant 并验证证据存在、同项目、指纹和密级，只能增加 evidence/source 并更新 `last_seen_revision`；resolved 冲突遇到反证时新建引用旧 resolution 的 open 冲突。用户答案通过 `lock_user_resolution` 进入 pending，再由 `apply_typed_resolution` 与文档/拓扑同事务置 resolved 或退回 open；历史永久保留。
+
+0.5 的完整机器可读目标见 [specs/domain-model.v0.5.yaml](specs/domain-model.v0.5.yaml)。在迁移、Schema 测试和 revision 恢复测试通过前，运行时仍使用 0.4 数据契约。

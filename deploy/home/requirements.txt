@@ -1,1 +1,3 @@
 mineru-open-sdk==0.2.5
+ms-agent==1.6.0
+loguru==0.7.3

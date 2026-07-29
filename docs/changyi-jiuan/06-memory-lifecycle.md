@@ -1,5 +1,7 @@
 # 06 记忆生命周期
 
+> 0.5.0 修订说明：自动晋升仅适用于无冲突候选；事实冲突不得由 Agent、来源排序或新文件版本自动关闭。完整协议见 [ADR-0005](adr/0005-server-maintenance-agent-harness.md)。
+
 ## 1. 候选层仍然必要
 
 Agent 全托管不等于 Agent 可以直接改写正式记忆。Agent 产生的总结可能包含误读、过时信息、无证据推断和过度概括；若任务一结束就直接写入正式知识，错误会在后续检索中持续放大。
@@ -25,9 +27,13 @@ stateDiagram-v2
     quarantined --> validating: 治理 Agent 补证或缩小作用域
     quarantined --> rejected: 重试耗尽且确认无效
     accepted --> disputed: 出现有效冲突
-    disputed --> validating: 治理 Agent 提交新证据
-    accepted --> superseded: 新记录严格胜出
-    disputed --> superseded: 冲突被证据裁决
+    disputed --> disputed: 治理 Agent 补证并更新冲突包
+    disputed --> validating: 锁定的用户答案进入 typed resolution
+    validating --> superseded: 用户确认单方取代
+    validating --> accepted: 用户确认缩小作用域后仍成立
+    validating --> rejected: 用户确认候选无效
+    validating --> disputed: 用户答案仍不足或提交失败
+    accepted --> superseded: 显式记录版本取代且不存在语义冲突
 ```
 
 状态含义：
@@ -39,6 +45,16 @@ stateDiagram-v2
 - `rejected`：保留最小审计，不进入默认检索；
 - `disputed`：曾被接受但出现有效冲突，回答时必须披露；
 - `superseded`：历史有效但已被新记录取代。
+
+memory 状态机不等同于 conflict 状态机。ConflictRecord 单独使用：
+
+```text
+open -> resolution_pending -> resolved
+  ^            |
+  |------------|  用户答案不足、revision 失效或事务失败
+```
+
+`resolution_pending` 表示已有可认证用户答案，等待 typed resolution 和原义补丁完成原子提交。
 
 ## 3. 候选记忆结构
 
@@ -122,10 +138,14 @@ remediation_attempts: 0
 新候选与 accepted 记忆发生否定、数值不一致、时间重叠或状态矛盾时：
 
 1. 创建 conflict 记录并标明双方来源和有效时间；
-2. 只有来源权威性、时间、作用域和证据强度形成严格胜序时，才自动 supersede；
-3. 无严格胜序时，旧记录进入 `disputed`、新记录进入 `quarantined`；
-4. 自动创建治理工作项，要求补证、限定作用域或复现实验；
-5. 在冲突消解前，回答必须披露分歧，不能静默选择一方。
+2. 旧记录进入 `disputed`，新记录进入 `quarantined` 或作为冲突变体保存；
+3. 来源权威性、时间、作用域和证据强度只用于解释冲突和生成用户问题，不用于自动选边；
+4. 自动创建治理工作项，补充证据、限定作用域或复现实验；既有冲突的新证据必须绑定目标 claim variant，并在验证同项目、指纹与密级后经 `ConflictService.append_conflict_evidence` 单调追加 evidence/source 与 `last_seen_revision`，不能改写 claim 原义、状态或 resolution；resolved 冲突遇到反证时必须新建引用旧 resolution 的 open 冲突；
+5. 相关检索必须附加冲突，本地 Agent 谨慎回答并在必要时询问用户；
+6. 只有可认证的用户明确答案可触发 `lock_user_resolution`，原子保存 resolution record、使 ConflictRecord 进入 `resolution_pending` 并入队；只有 `apply_typed_resolution` 将 typed outcome 与文档/拓扑补丁同事务提交后才标记已解决，`remain_open` 则退回 open；
+7. 原说法、证据、冲突记录和解决历史永久保留。
+
+用户答案的 typed resolution 不强迫选边，可以是：一方 superseded；双方按时间、地点、对象或 scope 缩小后同时 accepted；双方均无效并形成新的 accepted 结论；某候选 rejected；或答案仍不足、继续 disputed/open。通用文档/拓扑补丁不得修改 ConflictRecord、冲突状态、`conflict_refs` 或冲突派生摘要。
 
 ## 6. 策略裁决
 

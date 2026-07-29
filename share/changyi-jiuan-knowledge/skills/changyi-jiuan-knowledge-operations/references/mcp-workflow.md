@@ -14,7 +14,7 @@ kb_sync_skill -> kb_brief -> kb_graph_context -> 主动 kb_search
 ```text
 kb_sync_skill({
   client: "codex",
-  installed_version: "0.4.0",
+  installed_version: "0.5.0",
   installed_files: [
     { path: "SKILL.md", sha256: "..." },
     { path: "agents/openai.yaml", sha256: "..." },
@@ -39,6 +39,10 @@ kb_sync_skill({
 - `kb_graph_context({ node_id, query, depth: 1, artifact_mode: "excerpt" })`：分文件、图谱与关联 artifacts。
 - `kb_search({ query, top_k })`：人名、数字、日期、版本、原文、表格、图片和证据的主动细节 RAG。
 - `kb_start_work`：创建受审计工作项。
-- `kb_update_main` / `kb_upsert_section`：维护长期主/分文件。
 - `kb_publish_resource` / `kb_capture_context`：持久化产物和提炼后的对话知识。
 - `kb_finish_work`：幂等关单并记录证据、未解决项和结果哈希。
+- `kb_submit_user_resolution`：仅负责人/指定负责人的独立 resolver principal 可用；锁定原话并入队，不能直接闭合冲突。
+
+主文件、分文件和拓扑由服务器 Maintenance Worker 根据上述增量异步整理。legacy `kb_update_main/kb_upsert_section` 只返回 proposal packet，不代表 canonical 已更新。
+
+非 resolver 成员收到用户对冲突的临时回答时，可以据此完成当前回复，但禁止把该回复放入 capture、closeout、resource 或任何持久调用。

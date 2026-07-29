@@ -1,11 +1,11 @@
 {
   "schema": "cyj-skill-manifest/v1",
   "skill_name": "changyi-jiuan-knowledge-operations",
-  "version": "0.4.0",
-  "bundle_sha256": "3165492263030520fd8e4bbeb4091474fdbeead7bf5c7c99a5f8efd5dc795e2d",
+  "version": "0.5.0",
+  "bundle_sha256": "566f2bd805358fc259c0ab4aba6d3851a14e0f9d8fdc8318da8e11ee6ca91f94",
   "files": {
-    "SKILL.md": "fe2c956b5cff9627afabc309e2cbabad3c01fdbd8f73a623d4ca34a58dad0b08",
+    "SKILL.md": "c4f9a59db841987f8e4ab37d5ed053455205d5b8a163070bbc1097dee4055fb4",
     "agents/openai.yaml": "08da9c8daf1fcede1e3e07c601cc31e26cadde894337beabd352add8eacb7993",
-    "references/mcp-workflow.md": "a97e6d4a5dca4ef0ba732b66a8f315da65ff215b74b978ef359d2749a70fd104"
+    "references/mcp-workflow.md": "1526aa32e5217e391710d8a8e94e75a733c927b62c068eec765586b7e48508d0"
   }
 }

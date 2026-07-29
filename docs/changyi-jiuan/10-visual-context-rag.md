@@ -1,5 +1,7 @@
 # 10 视觉上下文 RAG
 
+> 版本说明：本文记录 0.4 已实现的 Markdown 图片关联能力。0.5 的真实图片资源回传、多模态 Evidence Unit、向量召回和受控重排目标见 [11-v0.5-product-technology-stack.md](11-v0.5-product-technology-stack.md)。
+
 ## 1. 目标
 
 `kb_search` 命中文档带有图片引用时，为每个命中附带上最小的视觉上下文元数据，使 Agent 能在不额外请求全文的前提下判断图片是否与当前问题相关。

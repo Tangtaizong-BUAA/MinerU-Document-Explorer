@@ -1,0 +1,336 @@
+spec: changyi-jiuan-mcp-surface
+version: 0.5.0
+status: implemented-offline-live-provider-gate-pending
+current_build_version: 0.5.0
+current_deployed_version: 0.4.0
+inherits_unchanged_tool_contracts_from: mcp-surface.v0.1.yaml
+
+resource_templates:
+  inherited:
+    - "kb://project/{project_id}/brief"
+    - "kb://project/{project_id}/main"
+    - "kb://record/{record_id}"
+    - "kb://artifact/{artifact_id}"
+    - "kb://artifact/{artifact_id}/page/{page}"
+    - "kb://evidence/{evidence_id}"
+    - "kb://work/{work_id}"
+    - "kb://memory/{memory_id}"
+  added:
+    - "kb://conflict/{conflict_id}"
+    - "kb://artifact/{artifact_id}/image/{image_index}"
+    - "kb://artifact/{artifact_id}/evidence/{evidence_unit_id}"
+
+primary_clients: [Qoder, Hermes Agent, Codex]
+production_transport: authenticated_streamable_http
+local_compatibility_transport: stdio
+
+invariants:
+  - external_agents_answer_and_execute_project_work
+  - mcp_returns_evidence_and_accepts_controlled_contributions
+  - maintenance_worker_only_organizes_knowledge
+  - no_external_profile_can_patch_canonical_documents
+  - maintenance_worker_is_not_an_mcp_client
+  - semantic_conflicts_require_explicit_user_resolution
+  - home_node_is_the_only_writer
+  - aliyun_fallback_is_read_only
+
+profiles:
+  project-read:
+    exposure: team_https
+    purpose: low-token project orientation, retrieval, and evidence reading
+    tools:
+      - kb_sync_skill
+      - kb_brief
+      - kb_graph_context
+      - kb_lookup
+      - kb_search
+      - kb_outline
+      - kb_read
+      - kb_view
+
+  project-contribute:
+    exposure: team_https
+    purpose: default team agent profile for durable work and knowledge contributions
+    extends: project-read
+    tools:
+      - kb_start_work
+      - kb_publish_resource
+      - kb_capture_context
+      - kb_finish_work
+
+  project-resolve:
+    exposure: team_https_with_resolution_capability
+    purpose: relay an explicit user answer for an existing semantic conflict
+    extends: project-contribute
+    tools:
+      - kb_submit_user_resolution
+    identity_decision_required: false
+    authorized_principals: project_owner_and_explicitly_designated_responsible_persons_only
+    rules:
+      - user_statement_and_hash_are_required
+      - expected_conflict_revision_is_required
+      - tool_creates_resolution_pending_only
+      - typed_resolution_commits_through_internal_conflict_service
+      - agent_cannot_choose_a_winner_for_the_user
+
+  project-ops:
+    exposure: home_loopback_or_restricted_service_principal_only
+    purpose: deterministic project bootstrap, ingestion, parsing, health, and rebuild
+    extends: project-read
+    tools:
+      - kb_bootstrap_project
+      - kb_configure_source_root
+      - kb_ingest
+      - kb_parse_artifact
+      - kb_maintain
+    rules:
+      - never_exposed_through_the_team_default_principal
+      - no_canonical_document_patch_tools
+      - no_semantic_conflict_resolution
+
+  upstream-full:
+    exposure: development_only
+    purpose: upstream compatibility tests
+    tools: upstream_all
+    production_enabled: false
+
+legacy_profile_migration:
+  project-maintain:
+    v0_4_behavior: project-read_plus_work_lifecycle_plus_direct_canonical_patch
+    v0_5_behavior: compatibility_alias_of_project-contribute_with_proposal_only_shims
+    shim_tools: [kb_update_main, kb_upsert_section]
+    direct_canonical_write_semantics_removed: true
+    deprecation_metadata_required: true
+  project-admin:
+    v0_4_behavior: public_home_upstream_with_project-maintain_inheritance
+    v0_5_behavior: compatibility_alias_of_project_ops_with_proposal_only_shims_on_home_loopback
+    shim_tools: [kb_update_main, kb_upsert_section, kb_reconcile_memory]
+    direct_canonical_write_or_conflict_closure_semantics_removed: true
+    public_team_route_forbidden: true
+
+tools_never_exposed_with_direct_canonical_or_conflict_closure_semantics:
+  - kb_update_main
+  - kb_upsert_section
+  - kb_reconcile_memory
+  - force_accept
+  - resolve_conflict
+
+legacy_shim_window:
+  duration: one_full_skill_release_window
+  purpose: allow_an_in_flight_v0_4_task_to_finish_after_receiving_the_v0_5_skill_delta
+  behavior:
+    - old_tool_name_remains_discoverable_only_on_legacy_alias
+    - request_is_converted_to_a_noncanonical_change_packet
+    - response_contains_packet_id_current_revision_migration_required_and_deprecation_metadata
+    - response_never_claims_the_canonical_document_was_already_updated
+    - new_skill_instructions_take_effect_on_the_next_task_or_client_restart
+    - shim_removal_requires_zero_observed_calls_for_the_declared_release_window
+
+internal_maintenance_worker:
+  mcp_profile: none
+  transport: in_process_application_services
+  process_isolation: separate_worker
+  model_loop: modelscope_ms_agent_1_6
+  runtime: isolated_python_worker_over_jsonl_stdio
+  default_model: qwen3.7-flash
+  native_modalities: [text, image, video]
+  canonical_commit_authority: deterministic_knowledge_maintenance_harness
+  model_visible_tools:
+    - read_change_packet
+    - read_document_blocks
+    - read_evidence
+    - read_topology_neighborhood
+    - search_maintenance_evidence
+    - find_open_conflicts
+    - submit_maintenance_plan
+    - finish_no_change
+    - report_insufficient_evidence
+  model_forbidden_tools:
+    - shell
+    - arbitrary_filesystem
+    - arbitrary_network
+    - arbitrary_sql
+    - public_mcp_loopback
+    - direct_canonical_write
+    - user_answering
+    - resolve_conflict
+  allowed_plan_operations:
+    - no_change
+    - patch_main
+    - patch_section
+    - create_section
+    - update_topology
+    - register_conflict
+    - observe_conflict
+  protected_from_generic_plan:
+    - existing_conflict_record
+    - conflict_status
+    - conflict_refs
+    - conflict_derived_blocks
+  budget_profile: maintenance-budget/v1
+  budget_defaults:
+    max_tool_calls: 8
+    max_cumulative_input_tokens: 12000
+    max_context_tokens_per_step: 6000
+    max_cumulative_output_tokens: 3000
+    max_sections: 6
+    max_evidence_units: 40
+    max_multimodal_assets: 12
+    max_normal_generations: 1
+    max_schema_repairs: 1
+  budget_rules:
+    - token_limits_are_accumulated_from_provider_usage_across_the_entire_loop
+    - per_packet_cost_limit_is_required_from_deployment_configuration
+    - missing_or_predicted_over_budget_fails_closed
+
+conflict_service:
+  semantic_states: [open, resolution_pending, resolved]
+  only_state_change_transactions:
+    - register_open_conflict
+    - lock_user_resolution
+    - apply_typed_resolution
+  non_state_change_transactions:
+    - append_conflict_evidence
+  append_conflict_evidence_contract:
+    required: [conflict_id, expected_conflict_revision, target_claim_variant_refs, evidence_refs, source_refs, idempotency_key]
+    may_change: [evidence_observations, last_seen_revision]
+    forbidden: [claim_meaning, status, resolution]
+    validation:
+      - target_claim_variants_exist_in_the_conflict
+      - evidence_and_source_refs_exist_and_belong_to_the_same_project
+      - evidence_fingerprint_matches_and_confidentiality_is_valid
+      - counterevidence_against_a_resolved_resolution_is_rejected_from_append
+      - rejected_resolved_counterevidence_registers_a_new_open_conflict_referencing_the_prior_conflict_and_resolution
+  typed_resolution_outcomes:
+    - supersede_one_claim
+    - accept_multiple_claims_with_narrowed_scopes
+    - reject_all_claims_and_record_new_statement
+    - reject_candidate_claim
+    - remain_open
+  history_and_refs_are_monotonic: true
+
+tools:
+  kb_submit_user_resolution:
+    profile: project-resolve
+    read_only: false
+    idempotency_key: idempotency_key
+    required_input:
+      - conflict_id
+      - expected_conflict_revision
+      - resolution_statement
+      - source_turn_ref
+      - user_statement_hash
+      - idempotency_key
+    output:
+      - conflict_id
+      - status
+      - resolution_id
+      - change_packet_id
+      - current_conflict_revision
+      - actor_principal
+      - attestation_mode
+    rules:
+      - status_is_resolution_pending_or_open_never_resolved_in_this_tool_call
+      - named_actor_requires_a_verified_identity_claim
+      - shared_token_sets_client_attested_and_team_principal
+      - user_statement_hash_proves_content_integrity_not_human_authorship
+      - verified_named_actor_requires_identity_claim_or_trusted_signed_user_event
+      - agent_may_relay_but_may_not_invent_or_expand_the_user_statement
+      - lock_user_resolution_atomically_persists_the_record_moves_open_to_resolution_pending_and_enqueues_the_packet
+      - failed_lock_user_resolution_leaves_the_conflict_open
+      - apply_typed_resolution_commits_typed_outcome_document_topology_and_final_status_as_one_transaction
+
+  kb_update_main:
+    profile: legacy_project_maintain_alias_only
+    compatibility_mode: proposal_only_shim
+    idempotency_key: request_hash
+    required_input: [project_id, expected_revision, markdown, change_summary, work_id]
+    output: [status, change_packet_id, current_revision, migration_required, deprecation]
+    rules:
+      - no_direct_canonical_write
+      - enqueue_a_legacy_change_proposal
+      - never_return_changed_true_before_internal_commit
+
+  kb_upsert_section:
+    profile: legacy_project_maintain_alias_only
+    compatibility_mode: proposal_only_shim
+    idempotency_key: request_hash
+    required_input: [project_id, key, markdown, change_summary, work_id]
+    output: [status, change_packet_id, current_revision, migration_required, deprecation]
+    rules:
+      - no_direct_canonical_write
+      - enqueue_a_legacy_change_proposal
+      - conflict_protected_blocks_and_refs_are_rejected
+
+  kb_reconcile_memory:
+    profile: legacy_project_admin_alias_on_home_loopback_only
+    compatibility_mode: evidence_proposal_only_shim
+    idempotency_key: request_hash
+    required_input: [memory_id, action, rationale]
+    output: [status, change_packet_id, current_memory_status, migration_required, deprecation]
+    rules:
+      - may_add_evidence_or_narrow_scope_as_a_proposal
+      - cannot_accept_reject_supersede_or_close_a_semantic_conflict
+      - no_direct_policy_state_change
+
+query_contract:
+  server_side_answer_generation: forbidden
+  maintenance_reasoning_model_on_hot_path: forbidden
+  relevant_open_conflicts_must_surface: true
+  evidence_locator_required: true
+  artifact_resource_link_required_when_available: true
+
+model_provider_contract:
+  provider: alibaba_model_studio
+  target_region: cn-beijing
+  endpoint_class: workspace_specific
+  endpoint_reference_env: DASHSCOPE_BASE_URL
+  api_key_reference_env: DASHSCOPE_API_KEY
+  tuple_version_fields:
+    - provider
+    - region
+    - workspace_endpoint
+    - api_dialect
+    - model_id
+    - key_reference
+  rules:
+    - api_key_endpoint_and_model_list_must_belong_to_the_same_region
+    - actual_workspace_region_must_be_confirmed_before_implementation
+    - private_images_may_use_base64_data_uri_under_egress_policy
+    - video_is_sent_as_native_video_url_content_not_reduced_to_keyframes
+    - base64_data_uri_is_preferred_for_protected_video_within_the_size_budget
+    - signed_video_url_requires_ttl_hash_and_egress_audit
+    - keyframes_ocr_and_transcripts_are_retrieval_aids_not_native_video_substitutes
+    - raw_audio_asr_is_not_a_v0_5_service
+
+version_contract:
+  server_and_skill_artifacts: same_version_atomic_generation_and_publish
+  client_activation: staged_by_handshake_next_task_or_restart
+  compatibility_during_activation: version_handshake_and_legacy_shim
+  distributed_clients_instant_atomic_upgrade: not_assumed
+  skill_update_mode: incremental_by_file_sha256
+  generated_bundle_manual_edit: forbidden
+  separately_versioned:
+    - server
+    - skill_bundle
+    - tool_schema
+    - maintenance_prompt
+    - maintenance_harness
+    - model_id
+    - provider_region
+    - workspace_endpoint
+    - api_dialect
+    - embedding_dimension
+    - index
+    - knowledge_revision
+    - topology_revision
+
+release_gates:
+  - legacy_tool_names_have_no_direct_patch_or_conflict_closure_semantics
+  - in_flight_v0_4_task_receives_truthful_proposal_only_shim_results
+  - project_admin_not_on_team_public_route
+  - worker_has_no_mcp_or_direct_write_bypass
+  - protected_conflicts_cannot_be_hidden_or_unlinked
+  - typed_user_resolution_is_revision_locked_and_idempotent
+  - home_primary_and_aliyun_read_only_failover_passes_fault_injection
+  - old_client_compatibility_and_deprecation_metadata_verified
