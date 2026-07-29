@@ -15,9 +15,9 @@ cd /path/to/changyi-jiuan-knowledge
 bash scripts/install-mcp.sh
 ```
 
-脚本会静默要求输入令牌，将 `changyi_jiuan_knowledge` 注册为全局 Codex MCP，并设置当前 macOS 登录会话所需的环境变量。
+脚本会静默要求输入令牌，将内置 Skill 安装到 `${CODEX_HOME:-~/.codex}/skills/changyi-jiuan-knowledge-operations`，把 `changyi_jiuan_knowledge` 注册为全局 Codex MCP，并设置当前 macOS 登录会话所需的环境变量。
 
-4. 重启 Codex App，打开一个新任务。Agent 会先调用 `kb_brief`，在项目工作中用 `kb_publish_resource` 自动归档产物，并用 `kb_capture_context` 把对话中形成的长期信息提炼进知识库。
+4. 重启 Codex App，打开一个新任务。Agent 会先调用 `kb_brief` 完整读取主文件和分文件导航；按需用 `kb_graph_context` 读取分文件及其 artifacts，并对具体细节主动执行 `kb_search` RAG。在项目工作中，它会用 `kb_update_main`/`kb_upsert_section` 维护长期认知、用 `kb_publish_resource` 自动归档产物，并用 `kb_capture_context` 提炼对话中的长期信息。
 
 也可以直接把 [PROMPT-FOR-CODEX.md](PROMPT-FOR-CODEX.md) 连同本文件夹交给 Codex。
 
@@ -37,6 +37,8 @@ bash scripts/install-mcp.sh
 ## 自动维护闭环
 
 - 每个长翼久安相关任务先创建 `work_id`。
+- 主文件长期保存项目总认知和导航；分文件长期保存科研、实践、联络、竞赛等专题信息。两者都由 Agent 通过 revision 控制持续维护。
+- Agent 从主文件选择分文件；读取分文件时，服务器同步回传图谱链接的 artifact 摘录与图片上下文。具体人名、数据、版本和原文必须继续走 RAG 和证据精读。
 - Agent 生成的 Markdown、报告、方案、表格、代码、图片或文档通过 MCP 上传到服务器；小型文本立即进入搜索，二进制文档可继续交给 MinerU 解析。
 - 对话中形成的事实、决策、约束、偏好、经验和开放问题会被精炼为结构化候选知识。服务器依据证据、用户指令和冲突策略自动接受、隔离或拒绝。
 - 系统不保存整段聊天，也不会把 Agent 自己生成的草稿自动当作事实证据。

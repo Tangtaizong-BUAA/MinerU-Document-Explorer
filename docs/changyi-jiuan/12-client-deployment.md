@@ -2,7 +2,7 @@
 
 三个客户端都使用同一份标准 MCP stdio 配置，差异只在各客户端的 MCP 配置入口。模板位于 `deploy/mcp/`；将 `__ABSOLUTE_KNOWLEDGE_DATA_ROOT__` 替换为真实数据根目录，禁止把该目录或 API Key 提交到仓库。
 
-默认使用 `project-maintain`：可检索、启动工作、closeout 和自动记忆回传。只读子 Agent 使用 `project-read`；资料摄取和治理 Agent 使用独立的 `project-admin` 配置，不与普通编排器共用。
+默认使用 `project-maintain`：可完整读取主文件、通过图谱读取分文件及其 artifacts、主动执行细节 RAG、维护主/分文件、启动工作、归档产物、closeout 和自动记忆回传。只读子 Agent 使用 `project-read`；资料摄取和治理 Agent 使用独立的 `project-admin` 配置，不与普通编排器共用。
 
 ```json
 {
@@ -23,7 +23,7 @@
 
 Codex、Qoder 和 Hermes Agent 均使用此标准形态。需要共享服务时，Hermes 可启动 `qmd mcp --http --port 8181`，仅绑定 localhost；项目 profile 的旧 `/query` 与 `/search` REST 接口被服务器拒绝，所有工作走 `/mcp`。
 
-项目还提供可随仓库分发的 Agent Skill：[`skills/changyi-jiuan-knowledge-operations/`](../../skills/changyi-jiuan-knowledge-operations/)。将其放入客户端可发现的 skills 目录，或在任务提示中显式要求使用 `$changyi-jiuan-knowledge-operations`。它把“先 brief、再精确检索、工作必须 closeout”的默认循环交给 Agent；MCP Server 仍是唯一的数据与权限裁决者。
+项目还提供可随仓库分发的 Agent Skill：[`skills/changyi-jiuan-knowledge-operations/`](../../skills/changyi-jiuan-knowledge-operations/)。将其放入客户端可发现的 skills 目录，或在任务提示中显式要求使用 `$changyi-jiuan-knowledge-operations`。它把“完整主文件 → 分文件与链接 artifacts → 主动细节 RAG → 维护主/分文件 → 工作 closeout”的默认循环交给 Agent；MCP Server 仍是唯一的数据与权限裁决者。
 
 ## 服务器部署
 
@@ -48,7 +48,7 @@ Authorization: Bearer $CYJ_MCP_BEARER_TOKEN
 ## 最小验收
 
 1. 客户端完成 MCP capability discovery；
-2. `project-read` 只出现 `kb_brief/kb_lookup/kb_search/kb_outline/kb_view/kb_read`；
-3. `project-maintain` 额外出现 `kb_start_work/kb_finish_work`；
+2. `project-read` 只出现 `kb_brief/kb_graph_context/kb_lookup/kb_search/kb_outline/kb_view/kb_read`；
+3. `project-maintain` 额外出现 `kb_start_work/kb_update_main/kb_upsert_section/kb_publish_resource/kb_capture_context/kb_finish_work`；
 4. closeout 产生 audit event，重试同一 `work_id + result_hash` 返回相同结果；
 5. `project-admin` 才出现项目 bootstrap、source root 配置、摄取、MinerU 解析、记忆调解与维护工具。

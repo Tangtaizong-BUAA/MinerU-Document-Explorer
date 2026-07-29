@@ -1,7 +1,7 @@
 interface:
   display_name: "Changyi Jiuan Knowledge Operations"
   short_description: "Persist project resources and distilled knowledge"
-  default_prompt: "Use $changyi-jiuan-knowledge-operations to retrieve context, persist my outputs, and capture durable project knowledge."
+  default_prompt: "Use $changyi-jiuan-knowledge-operations to load the complete project main file, navigate maintained sections and linked artifacts, run proactive detail RAG, and persist durable outputs and knowledge."
 dependencies:
   tools:
     - type: "mcp"

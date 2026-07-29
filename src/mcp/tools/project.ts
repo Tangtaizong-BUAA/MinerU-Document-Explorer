@@ -27,15 +27,32 @@ function textResult(text: string, structuredContent?: Record<string, unknown>) {
     : { content: [{ type: "text" as const, text }] };
 }
 
+function initialContextText(brief: Record<string, unknown>): string {
+  const main = brief.main_file as { markdown?: string; revision_hash?: string } | null;
+  const navigation = brief.navigation as { sections?: Array<{ id: string; title: string; summary?: string; artifact_count?: number }>; domain_records?: Array<{ id: string; title: string; type: string; artifact_count?: number }> } | undefined;
+  const sections = navigation?.sections ?? [];
+  const domain = navigation?.domain_records ?? [];
+  const active = brief.active_work as Array<{ id: string; title: string; status: string }> | undefined ?? [];
+  const memories = brief.accepted_memory as Array<{ id: string; kind: string; statement: string; scope: string }> | undefined ?? [];
+  const lines = [main?.markdown?.trimEnd() ?? "# Project main file unavailable", "", "---", "", "## 实时知识导航"];
+  lines.push(`主文件版本：${main?.revision_hash ?? "unknown"}`);
+  if (sections.length) lines.push("", "### 长期维护分文件", ...sections.map(item => `- ${item.id} — ${item.title}${item.summary ? `：${item.summary}` : ""}（关联 artifact ${item.artifact_count ?? 0}）`));
+  if (domain.length) lines.push("", "### 现有领域记录", ...domain.map(item => `- ${item.id} — ${item.title} [${item.type}]（关联 artifact ${item.artifact_count ?? 0}）`));
+  if (active.length) lines.push("", "### 活跃工作", ...active.map(item => `- ${item.id} — ${item.title} [${item.status}]`));
+  if (memories.length) lines.push("", "### 已接受的结构化知识", ...memories.map(item => `- ${item.id} [${item.kind}/${item.scope}] ${item.statement}`));
+  lines.push("", "细节问题必须继续使用 kb_search 做 RAG，并对命中节点调用 kb_graph_context 或 kb_read 下钻到分文件和 artifact；不得只凭主文件作可核验结论。");
+  return lines.join("\n");
+}
+
 export function registerProjectTools(server: McpServer, runtime: ProjectRuntime, profile: Exclude<ProjectProfile, "upstream-full">): void {
   server.registerTool("kb_brief", {
-    title: "Project Brief",
-    description: "Return a compact, evidence-aware project brief. Use before broad searching.",
+    title: "Project Main Context",
+    description: "Return the complete Agent-maintained project main file plus live section navigation, active work, and accepted structured knowledge. Always call first. The main file is an orientation layer, not a substitute for detail RAG.",
     annotations: { readOnlyHint: true, openWorldHint: false },
-    inputSchema: { project_id: z.string(), max_tokens: z.number().min(100).max(1200).optional().default(600) },
+    inputSchema: { project_id: z.string() },
   }, async ({ project_id }) => {
-    const brief = await runtime.brief(project_id);
-    return textResult(YAMLish(brief, 600), brief);
+    const brief = await runtime.brief(project_id, maximumConfidentiality(profile));
+    return textResult(initialContextText(brief), brief);
   });
 
   server.registerTool("kb_lookup", {
@@ -51,14 +68,14 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
 
   server.registerTool("kb_search", {
     title: "Project Search",
-    description: "Token-efficient lexical search over project records and accepted memory. Unverified memory stays hidden unless explicitly requested by an admin profile.",
+    description: "Token-efficient detail RAG over project records, maintained sections, accepted memory, and normalized artifacts. Use proactively for names, numbers, versions, exact wording, evidence, and any detail not fully established by the main file. Results include linked artifact handles.",
     annotations: { readOnlyHint: true, openWorldHint: false },
     inputSchema: { query: z.string().min(1), top_k: z.number().min(1).max(20).optional().default(5), include_unverified: z.boolean().optional().default(false) },
   }, async ({ query, top_k, include_unverified }) => {
     if (include_unverified && profile !== "project-admin") return { content: [{ type: "text", text: "include_unverified requires project-admin." }], isError: true };
-    const results = (await runtime.search(query, top_k, include_unverified)).filter(item => visibleTo(item.record, profile));
+    const results = (await runtime.search(query, top_k, include_unverified, maximumConfidentiality(profile))).filter(item => visibleTo(item.record, profile));
     const rows = results.map(item => {
-      const base = { id: item.record.id, title: item.record.title, type: item.record.type, status: item.record.status, score: item.score, snippet: item.snippet, uri: `kb://record/${encodeURIComponent(item.record.id)}` };
+      const base = { id: item.record.id, title: item.record.title, type: item.record.type, status: item.record.status, score: item.score, snippet: item.snippet, uri: `kb://record/${encodeURIComponent(item.record.id)}`, linked_artifacts: item.linked_artifacts };
       const withVisual = item.visual_context?.length ? { ...base, visual_context: item.visual_context } : base;
       return withVisual;
     });
@@ -112,6 +129,32 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     }
   });
 
+  server.registerTool("kb_graph_context", {
+    title: "Read Section with Linked Artifacts",
+    description: "Read one maintained section or domain record, expand its canonical graph links, and synchronously return linked artifact metadata or evidence excerpts. Use after selecting a section from kb_brief or a node from kb_search. For detail questions, pass the original query so artifact excerpts center on relevant text.",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    inputSchema: {
+      node_id: z.string(), query: z.string().optional(), depth: z.number().int().min(0).max(2).optional().default(1),
+      artifact_mode: z.enum(["metadata", "excerpt", "full"]).optional().default("excerpt"),
+      max_nodes: z.number().int().min(1).max(80).optional().default(30), max_artifacts: z.number().int().min(0).max(12).optional().default(5),
+      max_tokens: z.number().int().min(100).max(8000).optional().default(1800),
+    },
+  }, async ({ node_id, query, depth, artifact_mode, max_nodes, max_artifacts, max_tokens }) => {
+    try {
+      const output = await runtime.graphContext({ node_id, query, depth, artifact_mode, max_nodes, max_artifacts, max_tokens, maximum_confidentiality: maximumConfidentiality(profile) });
+      const content: Array<{ type: "text"; text: string } | { type: "resource"; resource: { uri: string; name: string; title: string; mimeType: string; text: string } }> = [
+        { type: "text", text: `${output.focus.content}\n\n[graph: ${output.nodes.length} linked nodes, ${output.artifacts.length} linked artifacts]` },
+      ];
+      for (const artifact of output.artifacts) {
+        if (!artifact.excerpt) continue;
+        content.push({ type: "resource", resource: { uri: artifact.document_uri ?? artifact.uri, name: artifact.title, title: artifact.title, mimeType: "text/markdown", text: artifact.excerpt } });
+      }
+      return { content, structuredContent: output };
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  });
+
   if (profile === "project-read") return;
 
   server.registerTool("kb_start_work", {
@@ -122,6 +165,42 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
   }, async ({ project_id, objective, expected_outputs, acceptance_criteria, input_refs }) => {
     const result = await runtime.startWork({ project_id, objective, expected_outputs, acceptance_criteria, input_refs, actor: `agent:${profile}` });
     return textResult(`Started ${result.work_id}`, result);
+  });
+
+  server.registerTool("kb_update_main", {
+    title: "Update Project Main File",
+    description: "Replace the complete Agent-maintained project main file using optimistic revision control. Keep it stable and navigational: overall identity, goals, current phase, top-level structure, durable constraints, and section routes. Move details into maintained sections and artifacts.",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    inputSchema: {
+      project_id: z.string(), work_id: z.string(), markdown: z.string().min(8).max(24_000), expected_revision: z.string().length(64),
+      change_summary: z.string().min(3).max(500), source_refs: z.array(z.string()).max(50).optional(),
+    },
+  }, async (input) => {
+    try {
+      const output = await runtime.updateProjectMain({ ...input, actor: `agent:${profile}`, maximum_confidentiality: maximumConfidentiality(profile) });
+      return textResult(`Project main ${output.changed ? "updated" : "unchanged"}; revision=${output.revision_hash}.`, output);
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  });
+
+  server.registerTool("kb_upsert_section", {
+    title: "Create or Update Maintained Knowledge Section",
+    description: "Create or update a long-lived Agent-maintained project subfile. Sections hold topic detail and explicit links to immutable or generated artifacts. Use expected_revision when updating; the server maintains main-to-section and section-to-artifact graph links.",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    inputSchema: {
+      project_id: z.string(), work_id: z.string(), key: z.string().regex(/^[a-z0-9][a-z0-9._-]{1,79}$/), title: z.string().min(2).max(240),
+      summary: z.string().min(8).max(1000), markdown: z.string().min(8).max(80_000), change_summary: z.string().min(3).max(500),
+      parent_ref: z.string().optional(), artifact_refs: z.array(z.string()).max(50).optional(), related_refs: z.array(z.string()).max(50).optional(),
+      source_refs: z.array(z.string()).max(50).optional(), expected_revision: z.string().length(64).optional(), confidentiality: z.enum(["public", "internal", "restricted"]).optional(),
+    },
+  }, async (input) => {
+    try {
+      const output = await runtime.upsertKnowledgeSection({ ...input, actor: `agent:${profile}`, maximum_confidentiality: maximumConfidentiality(profile) });
+      return textResult(`${output.created ? "Created" : "Updated"} maintained section ${output.section_id}; revision=${output.revision_hash}.`, output);
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
   });
 
   server.registerTool("kb_publish_resource", {
@@ -140,7 +219,7 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
 
   server.registerTool("kb_capture_context", {
     title: "Capture Distilled Project Context",
-    description: "Checkpoint durable project knowledge distilled from the ongoing conversation: facts, user decisions, procedures, lessons, constraints, preferences, and open questions. Submit concise statements and evidence references, never a raw transcript. Server policy promotes, quarantines, or rejects each update.",
+    description: "Checkpoint durable project knowledge distilled from the ongoing conversation: facts, user decisions, procedures, lessons, constraints, preferences, and open questions. Submit concise statements and evidence references, never a raw transcript. Server policy promotes, quarantines, or rejects each update; when accepted context changes a topic synthesis, refresh its maintained section before closeout.",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     inputSchema: { work_id: z.string(), summary: z.string().min(3).max(1000), updates: z.array(memoryUpdate).min(1).max(30) },
   }, async ({ work_id, summary, updates }) => {
@@ -154,7 +233,7 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
 
   server.registerTool("kb_finish_work", {
     title: "Finish Project Work",
-    description: "Submit an idempotent closeout. Include any not-yet-published generated_resources and distilled knowledge_updates; resources are persisted before closeout and memory is governed by server policy.",
+    description: "Submit an idempotent closeout after refreshing every affected maintained section and, only when top-level cognition changed, the main file. Include any not-yet-published generated_resources and distilled knowledge_updates; resources are persisted before closeout and memory is governed by server policy.",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     inputSchema: {
       work_id: z.string(), outcome: z.enum(["completed", "partial", "failed", "cancelled"]), summary: z.string().min(1), result_hash: z.string().min(8),

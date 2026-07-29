@@ -1,5 +1,5 @@
 spec: changyi-jiuan-domain-model
-version: 0.1.1
+version: 0.2.0
 status: draft
 
 id_format: "<type>:<project-key>:<ulid-or-slug>"
@@ -55,6 +55,22 @@ record_types:
   project:
     statuses: [planned, active, paused, completed, archived]
     required: [mission, start_date, owners, current_phase]
+    maintained_fields: [main_revision, section_refs]
+    rules:
+      - "record body is the complete Agent-maintained project main file"
+      - "main file is loaded before section or RAG retrieval"
+      - "stale revisions cannot overwrite the main file"
+
+  knowledge_section:
+    id_prefix: section
+    statuses: [active, archived]
+    required: [key, summary, parent_ref, revision_hash]
+    links: [child_section_refs, artifact_refs, related_refs]
+    rules:
+      - "record body is a long-lived Agent-maintained topic subfile"
+      - "parent is the project main file or another section"
+      - "artifact refs must resolve inside the same project"
+      - "stale revisions cannot overwrite a section"
 
   workstream:
     statuses: [planned, active, paused, completed, archived]
@@ -156,6 +172,9 @@ record_types:
       - "revalidation creates a new event"
 
 relations:
+  has_section: { from: [project, knowledge_section], to: knowledge_section }
+  uses_artifact: { from: knowledge_section, to: artifact }
+  related_to: { from: knowledge_section, to: "*" }
   part_of: { from: "*", to: [project, workstream] }
   performed_by: { from: [activity, work_item], to: [person, organization] }
   occurred_at: { from: activity, to: location }

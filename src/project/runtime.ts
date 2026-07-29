@@ -99,6 +99,59 @@ export type CaptureContextResult = {
   audit_event_id: string;
 };
 
+export type KnowledgeGraphEdge = {
+  from: string;
+  to: string;
+  relation: string;
+  field: string;
+};
+
+export type KnowledgeGraphNode = {
+  id: string;
+  type: string;
+  title: string;
+  status: string;
+  uri: string;
+};
+
+export type LinkedArtifact = KnowledgeGraphNode & {
+  mime_type?: string;
+  source_kind?: string;
+  sha256?: string;
+  created_by?: string;
+  document_uri?: string;
+  excerpt?: string;
+  excerpt_truncated?: boolean;
+  visual_context?: ImageAssociation[];
+};
+
+export type GraphContextResult = {
+  focus: KnowledgeGraphNode & { content: string; content_truncated: boolean };
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+  artifacts: LinkedArtifact[];
+  external_refs: string[];
+  depth: number;
+};
+
+export type UpdateProjectMainResult = {
+  project_id: string;
+  main_uri: string;
+  revision_hash: string;
+  previous_revision_hash: string;
+  changed: boolean;
+  audit_event_id?: string;
+};
+
+export type UpsertKnowledgeSectionResult = {
+  section_id: string;
+  section_uri: string;
+  revision_hash: string;
+  previous_revision_hash?: string;
+  created: boolean;
+  audit_event_id: string;
+};
+
 export type FinishWorkInput = {
   work_id: string;
   outcome: "completed" | "partial" | "failed" | "cancelled";
@@ -150,6 +203,22 @@ const MINERU_MIME_TYPES = new Set([
 const INLINE_TEXT_MIME_TYPES = new Set(["text/markdown", "text/plain", "text/csv", "application/json", "application/yaml", "text/yaml"]);
 const PUBLISHABLE_MIME_TYPES = new Set([...INLINE_TEXT_MIME_TYPES, ...MINERU_MIME_TYPES]);
 const MAX_INLINE_RESOURCE_BYTES = 640 * 1024;
+const GRAPH_REFERENCE_FIELDS: Array<{ field: string; relation: string }> = [
+  { field: "section_refs", relation: "has_section" },
+  { field: "child_section_refs", relation: "has_subsection" },
+  { field: "parent_ref", relation: "part_of" },
+  { field: "related_refs", relation: "related_to" },
+  { field: "source_refs", relation: "references" },
+  { field: "artifact_refs", relation: "uses_artifact" },
+  { field: "evidence_refs", relation: "supported_by" },
+  { field: "artifacts", relation: "produced" },
+  { field: "input_refs", relation: "uses_input" },
+  { field: "artifact_id", relation: "describes_artifact" },
+  { field: "source_work_id", relation: "produced_by" },
+  { field: "last_modified_work_id", relation: "updated_by_work" },
+  { field: "subject_ref", relation: "validates" },
+  { field: "supersedes", relation: "supersedes" },
+];
 
 function now(): string { return new Date().toISOString(); }
 function digest(value: string): string { return createHash("sha256").update(value).digest("hex"); }
@@ -157,6 +226,10 @@ function digestBytes(value: Uint8Array): string { return createHash("sha256").up
 function safeName(id: string): string { return id.replace(/[^A-Za-z0-9._-]/g, "_"); }
 function newId(type: string): string { return `${type}:cyj:${randomUUID().replace(/-/g, "")}`; }
 function uniqueStrings(values: Array<string | undefined>): string[] { return [...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0))]; }
+function asStrings(value: unknown): string[] {
+  if (typeof value === "string") return value ? [value] : [];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+}
 function confidentialityAllowed(record: KnowledgeRecord, maximum: Confidentiality): boolean {
   const rank: Record<Confidentiality, number> = { public: 0, internal: 1, restricted: 2, secret: 3 };
   return rank[(record.confidentiality ?? "internal") as Confidentiality] <= rank[maximum];
@@ -285,7 +358,7 @@ export class ProjectRuntime {
     return record;
   }
 
-  async startWork(input: { project_id: string; objective: string; expected_outputs: string[]; acceptance_criteria: string[]; actor: string; input_refs?: string[] }): Promise<{ work_id: string; knowledge_version: string; brief_uri: string; closeout_requirements: string[] }> {
+  async startWork(input: { project_id: string; objective: string; expected_outputs: string[]; acceptance_criteria: string[]; actor: string; input_refs?: string[] }): Promise<{ work_id: string; knowledge_version: string; brief_uri: string; main_uri: string; closeout_requirements: string[] }> {
     const project = await this.get(input.project_id);
     if (!project || project.record.type !== "project") throw new Error(`Unknown project: ${input.project_id}`);
     const workId = newId("work_item");
@@ -305,7 +378,8 @@ export class ProjectRuntime {
       work_id: record.id,
       knowledge_version: digest(JSON.stringify((await this.records()).map(item => [item.record.id, item.record.updated_at]))).slice(0, 16),
       brief_uri: `kb://project/${encodeURIComponent(input.project_id)}/brief`,
-      closeout_requirements: ["publish durable resources", "capture distilled project context", "summary", "result_hash", "outcome", "evidence_refs for factual memory"],
+      main_uri: `kb://project/${encodeURIComponent(input.project_id)}/main`,
+      closeout_requirements: ["refresh affected maintained sections", "refresh the main file only if project-wide cognition or routes changed", "publish durable resources", "capture distilled project context", "run detail RAG for factual claims", "summary", "result_hash", "outcome", "evidence_refs for factual memory"],
     };
   }
 
@@ -593,7 +667,119 @@ export class ProjectRuntime {
     }).slice(0, Math.min(limit, 100));
   }
 
-  async search(query: string, limit = 5, includeUnverified = false): Promise<Array<{ record: KnowledgeRecord; score: number; snippet: string; visual_context?: ImageAssociation[] }>> {
+  private graphNode(record: KnowledgeRecord): KnowledgeGraphNode {
+    return { id: record.id, type: record.type, title: record.title, status: record.status, uri: `kb://record/${encodeURIComponent(record.id)}` };
+  }
+
+  private graphEdges(records: KnowledgeRecord[]): KnowledgeGraphEdge[] {
+    const edges: KnowledgeGraphEdge[] = [];
+    for (const record of records) {
+      if (record.id !== record.project_id) edges.push({ from: record.id, to: record.project_id, relation: "part_of_project", field: "project_id" });
+      for (const { field, relation } of GRAPH_REFERENCE_FIELDS) {
+        for (const target of asStrings(record[field])) {
+          if (target !== record.id) edges.push({ from: record.id, to: target, relation, field });
+        }
+      }
+    }
+    const seen = new Set<string>();
+    return edges.filter(edge => {
+      const key = `${edge.from}\u0000${edge.to}\u0000${edge.relation}\u0000${edge.field}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private excerptAroundQuery(text: string, query: string | undefined, maxChars: number): { text: string; truncated: boolean } {
+    if (text.length <= maxChars) return { text, truncated: false };
+    const terms = (query ?? "").toLocaleLowerCase().split(/\s+/).filter(term => term.length >= 2);
+    const lower = text.toLocaleLowerCase();
+    const found = terms.map(term => lower.indexOf(term)).filter(index => index >= 0).sort((a, b) => a - b)[0] ?? 0;
+    const start = Math.max(0, found - Math.floor(maxChars * 0.2));
+    const end = Math.min(text.length, start + maxChars);
+    return { text: `${start > 0 ? "…\n" : ""}${text.slice(start, end)}${end < text.length ? "\n…" : ""}`, truncated: true };
+  }
+
+  async graphContext(input: {
+    node_id: string; depth?: number; query?: string; artifact_mode?: "metadata" | "excerpt" | "full";
+    max_nodes?: number; max_artifacts?: number; max_tokens?: number; maximum_confidentiality?: Confidentiality;
+  }): Promise<GraphContextResult> {
+    const depth = Math.max(0, Math.min(input.depth ?? 1, 2));
+    const maxNodes = Math.max(1, Math.min(input.max_nodes ?? 30, 80));
+    const maxArtifacts = Math.max(0, Math.min(input.max_artifacts ?? 5, 12));
+    const maxChars = Math.max(400, Math.min(input.max_tokens ?? 1800, 8000) * 4);
+    const maximum = input.maximum_confidentiality ?? "internal";
+    const items = (await this.records()).filter(item => confidentialityAllowed(item.record, maximum));
+    const byId = new Map(items.map(item => [item.record.id, item]));
+    const focusItem = byId.get(input.node_id);
+    if (!focusItem) throw new Error(`Knowledge graph node not found or not visible: ${input.node_id}`);
+    const allEdges = this.graphEdges(items.map(item => item.record));
+    const selected = new Set<string>([input.node_id]);
+    let frontier = new Set<string>([input.node_id]);
+    for (let step = 0; step < depth && selected.size < maxNodes; step++) {
+      const next = new Set<string>();
+      for (const edge of allEdges) {
+        const candidate = frontier.has(edge.from) ? edge.to : frontier.has(edge.to) ? edge.from : undefined;
+        if (!candidate || !byId.has(candidate) || selected.has(candidate)) continue;
+        selected.add(candidate);
+        next.add(candidate);
+        if (selected.size >= maxNodes) break;
+      }
+      frontier = next;
+    }
+    const edges = allEdges.filter(edge => selected.has(edge.from) && selected.has(edge.to));
+    const nodes = [...selected].filter(id => id !== input.node_id).map(id => this.graphNode(byId.get(id)!.record));
+    const directArtifactIds = new Set(edges.filter(edge => edge.from === input.node_id || edge.to === input.node_id).flatMap(edge => [edge.from, edge.to]).filter(id => byId.get(id)?.record.type === "artifact"));
+    const artifactItems = [...selected]
+      .filter(id => byId.get(id)?.record.type === "artifact")
+      .sort((a, b) => Number(directArtifactIds.has(b)) - Number(directArtifactIds.has(a)))
+      .slice(0, maxArtifacts)
+      .map(id => byId.get(id)!);
+    const focusRaw = focusItem.record.type === "artifact" && typeof focusItem.record.normalized_markdown_path === "string"
+      ? await readFile(join(this.root, focusItem.record.normalized_markdown_path), "utf8").catch(() => focusItem.body)
+      : focusItem.body || renderRecord(focusItem.record, focusItem.body);
+    const focusBudget = artifactItems.length > 0 && input.artifact_mode !== "metadata" ? Math.max(800, Math.floor(maxChars * 0.55)) : maxChars;
+    const focusExcerpt = this.excerptAroundQuery(focusRaw, input.query, focusBudget);
+    let remainingChars = Math.max(0, maxChars - focusExcerpt.text.length);
+    const artifacts: LinkedArtifact[] = [];
+    for (const [index, item] of artifactItems.entries()) {
+      const record = item.record;
+      const normalizedPath = typeof record.normalized_markdown_path === "string" ? record.normalized_markdown_path : undefined;
+      const artifact: LinkedArtifact = {
+        ...this.graphNode(record), mime_type: typeof record.mime_type === "string" ? record.mime_type : undefined,
+        source_kind: typeof record.source_kind === "string" ? record.source_kind : undefined,
+        sha256: typeof record.sha256 === "string" ? record.sha256 : undefined,
+        created_by: record.created_by,
+        document_uri: normalizedPath ? `kb://artifact/${encodeURIComponent(record.id)}/document` : undefined,
+        visual_context: Array.isArray(record.image_associations) ? record.image_associations as ImageAssociation[] : undefined,
+      };
+      if (input.artifact_mode !== "metadata" && normalizedPath && remainingChars > 0) {
+        const remainingArtifacts = artifactItems.length - index;
+        const budget = Math.max(200, Math.floor(remainingChars / remainingArtifacts));
+        const full = await readFile(join(this.root, normalizedPath), "utf8").catch(() => "");
+        const excerpt = this.excerptAroundQuery(full, input.artifact_mode === "full" ? undefined : input.query, budget);
+        artifact.excerpt = excerpt.text;
+        artifact.excerpt_truncated = excerpt.truncated;
+        remainingChars = Math.max(0, remainingChars - excerpt.text.length);
+      }
+      artifacts.push(artifact);
+    }
+    const known = new Set(byId.keys());
+    const externalRefs = uniqueStrings([...selected].flatMap(id => {
+      const record = byId.get(id)!.record;
+      return GRAPH_REFERENCE_FIELDS.flatMap(({ field }) => asStrings(record[field])).filter(ref => !known.has(ref));
+    }));
+    return {
+      focus: { ...this.graphNode(focusItem.record), content: focusExcerpt.text, content_truncated: focusExcerpt.truncated },
+      nodes, edges, artifacts, external_refs: externalRefs, depth,
+    };
+  }
+
+  async linkedArtifacts(nodeId: string, limit = 5, maximumConfidentiality: Confidentiality = "internal"): Promise<LinkedArtifact[]> {
+    return (await this.graphContext({ node_id: nodeId, depth: 1, artifact_mode: "metadata", max_nodes: 40, max_artifacts: limit, max_tokens: 100, maximum_confidentiality: maximumConfidentiality })).artifacts;
+  }
+
+  async search(query: string, limit = 5, includeUnverified = false, maximumConfidentiality: Confidentiality = "internal"): Promise<Array<{ record: KnowledgeRecord; score: number; snippet: string; visual_context?: ImageAssociation[]; linked_artifacts?: LinkedArtifact[] }>> {
     const terms = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
     const indexed = await Promise.all((await this.records()).map(async (item) => {
       let normalized = "";
@@ -602,7 +788,8 @@ export class ProjectRuntime {
       }
       return { ...item, normalized, haystack: `${item.record.title}\n${item.body}\n${normalized}\n${JSON.stringify(item.record)}`.toLocaleLowerCase() };
     }));
-    return indexed
+    const matches = indexed
+      .filter(item => confidentialityAllowed(item.record, maximumConfidentiality))
       .filter(item => item.record.type !== "validation_event")
       .filter(item => includeUnverified || item.record.status === "accepted" || item.record.type !== "memory")
       .map(item => ({ ...item, score: terms.reduce((total, term) => total + (item.haystack.includes(term) ? 1 : 0), 0) }))
@@ -614,14 +801,143 @@ export class ProjectRuntime {
         const visualContext = imageAssociations?.length ? imageAssociations.slice(0, 5) : undefined;
         return { record: item.record, score: item.score, snippet: (item.normalized || item.body).slice(0, 400), visual_context: visualContext?.length ? visualContext : undefined };
       });
+    return Promise.all(matches.map(async item => {
+      const linkedArtifacts = item.record.type === "artifact" ? [] : await this.linkedArtifacts(item.record.id, 3, maximumConfidentiality).catch(() => []);
+      return { ...item, linked_artifacts: linkedArtifacts.length ? linkedArtifacts : undefined };
+    }));
   }
 
-  async brief(projectId: string): Promise<Record<string, unknown>> {
-    const records = (await this.records()).map(item => item.record);
-    const project = records.find(record => record.type === "project" && record.id === projectId) ?? null;
+  async updateProjectMain(input: {
+    project_id: string; work_id: string; markdown: string; expected_revision: string; change_summary: string;
+    source_refs?: string[]; actor: string; maximum_confidentiality?: Confidentiality;
+  }): Promise<UpdateProjectMainResult> {
+    const current = await this.get(input.project_id);
+    if (!current || current.record.type !== "project") throw new Error(`Unknown project: ${input.project_id}`);
+    if (!confidentialityAllowed(current.record, input.maximum_confidentiality ?? "internal")) throw new Error("Project main file is outside this profile's confidentiality scope");
+    const work = await this.get(input.work_id);
+    if (!work || work.record.type !== "work_item" || work.record.project_id !== input.project_id) throw new Error("Project main updates require a work item in the same project");
+    const markdown = input.markdown.trimEnd() + "\n";
+    if (!markdown.startsWith("# ")) throw new Error("Project main file must start with a level-1 Markdown heading");
+    if (markdown.length > 24_000) throw new Error("Project main file exceeds the 24,000-character limit; move details into knowledge sections");
+    if (SECRET_PATTERN.test(`${input.change_summary}\n${markdown}`)) throw new Error("Project main update appears to contain a credential or private key");
+    const previousRevision = typeof current.record.main_revision === "string" ? current.record.main_revision : digest(current.body);
+    const revision = digest(markdown);
+    if (revision === previousRevision) {
+      return { project_id: input.project_id, main_uri: `kb://project/${encodeURIComponent(input.project_id)}/main`, revision_hash: revision, previous_revision_hash: previousRevision, changed: false };
+    }
+    if (!["in_progress", "blocked"].includes(work.record.status)) throw new Error("Project main updates require an active work item in the same project");
+    if (input.expected_revision !== previousRevision) throw new Error(`Project main revision conflict: expected ${input.expected_revision}, current ${previousRevision}`);
+    if (current.body) await this.writeDerived(`history/project-main/${safeName(input.project_id)}/${safeName(now())}-${previousRevision.slice(0, 12)}.md`, renderRecord(current.record, current.body));
+    await this.upsertRecord({
+      ...current.record, created_by: current.record.created_by, updated_by: input.actor,
+      main_revision: revision, main_updated_at: now(), main_change_summary: input.change_summary,
+      last_modified_work_id: input.work_id,
+      source_refs: uniqueStrings([...(asStrings(current.record.source_refs)), input.work_id, ...(input.source_refs ?? [])]),
+    }, markdown);
+    const auditEventId = await this.appendAudit({ type: "project_main_updated", project_id: input.project_id, work_id: input.work_id, actor: input.actor, previous_revision_hash: previousRevision, revision_hash: revision, change_summary: input.change_summary });
+    return { project_id: input.project_id, main_uri: `kb://project/${encodeURIComponent(input.project_id)}/main`, revision_hash: revision, previous_revision_hash: previousRevision, changed: true, audit_event_id: auditEventId };
+  }
+
+  private async updateSectionParentLinks(sectionId: string, previousParentId: string | undefined, nextParentId: string, actor: string): Promise<void> {
+    const updateParent = async (parentId: string, add: boolean) => {
+      const parent = await this.get(parentId);
+      if (!parent || !["project", "knowledge_section"].includes(parent.record.type)) throw new Error(`Invalid knowledge section parent: ${parentId}`);
+      const field = parent.record.type === "project" ? "section_refs" : "child_section_refs";
+      const refs = asStrings(parent.record[field]);
+      const next = add ? uniqueStrings([...refs, sectionId]) : refs.filter(ref => ref !== sectionId);
+      await this.upsertRecord({ ...parent.record, created_by: parent.record.created_by, updated_by: actor, [field]: next }, parent.body);
+    };
+    if (previousParentId && previousParentId !== nextParentId) await updateParent(previousParentId, false);
+    await updateParent(nextParentId, true);
+  }
+
+  async upsertKnowledgeSection(input: {
+    project_id: string; work_id: string; key: string; title: string; summary: string; markdown: string; change_summary: string; actor: string;
+    parent_ref?: string; artifact_refs?: string[]; related_refs?: string[]; source_refs?: string[]; expected_revision?: string;
+    confidentiality?: Exclude<Confidentiality, "secret">; maximum_confidentiality?: Confidentiality;
+  }): Promise<UpsertKnowledgeSectionResult> {
+    const project = await this.get(input.project_id);
+    if (!project || project.record.type !== "project") throw new Error(`Unknown project: ${input.project_id}`);
+    const work = await this.get(input.work_id);
+    if (!work || work.record.type !== "work_item" || work.record.project_id !== input.project_id) throw new Error("Knowledge section updates require a work item in the same project");
+    const key = input.key.toLocaleLowerCase();
+    if (!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(key)) throw new Error("Knowledge section key must be 2-80 lowercase ASCII letters, numbers, dots, underscores, or hyphens");
+    const sectionId = `section:cyj:${digest(input.project_id).slice(0, 8)}:${key}`;
+    const existing = await this.get(sectionId);
+    if (existing && existing.record.type !== "knowledge_section") throw new Error(`Section ID collision: ${sectionId}`);
+    const maximum = input.maximum_confidentiality ?? "internal";
+    if (existing && !confidentialityAllowed(existing.record, maximum)) throw new Error("Knowledge section is outside this profile's confidentiality scope");
+    const parentRef = input.parent_ref ?? input.project_id;
+    const parent = await this.get(parentRef);
+    if (!parent || !["project", "knowledge_section"].includes(parent.record.type) || parent.record.project_id !== input.project_id) throw new Error("parent_ref must be this project or one of its knowledge sections");
+    if (parentRef === sectionId) throw new Error("A knowledge section cannot be its own parent");
+    const artifactRefs = uniqueStrings(input.artifact_refs ?? []).sort();
+    for (const artifactId of artifactRefs) {
+      const artifact = await this.get(artifactId);
+      if (!artifact || artifact.record.type !== "artifact" || artifact.record.project_id !== input.project_id) throw new Error(`Unknown project artifact: ${artifactId}`);
+    }
+    const relatedRefs = uniqueStrings(input.related_refs ?? []).filter(ref => ref !== sectionId).sort();
+    for (const relatedId of relatedRefs) {
+      const related = await this.get(relatedId);
+      if (!related || related.record.project_id !== input.project_id) throw new Error(`Unknown related project record: ${relatedId}`);
+    }
+    const markdown = input.markdown.trimEnd() + "\n";
+    if (!markdown.startsWith("# ")) throw new Error("Knowledge section must start with a level-1 Markdown heading");
+    if (markdown.length > 80_000) throw new Error("Knowledge section exceeds the 80,000-character limit; split it into child sections");
+    if (SECRET_PATTERN.test(`${input.title}\n${input.summary}\n${input.change_summary}\n${markdown}`)) throw new Error("Knowledge section appears to contain a credential or private key");
+    const confidentiality = input.confidentiality ?? existing?.record.confidentiality as Exclude<Confidentiality, "secret"> | undefined ?? "internal";
+    if (!confidentialityAllowed({ id: sectionId, type: "knowledge_section", title: input.title, status: "active", project_id: input.project_id, created_at: "", updated_at: "", created_by: input.actor, confidentiality }, maximum)) throw new Error("Requested section confidentiality is outside this profile's scope");
+    const semanticSourceRefs = uniqueStrings([...asStrings(existing?.record.source_refs).filter(ref => !ref.startsWith("work_item:")), ...(input.source_refs ?? [])]).sort();
+    const revision = digest(JSON.stringify({ key, title: input.title, summary: input.summary, markdown, parent_ref: parentRef, artifact_refs: artifactRefs, related_refs: relatedRefs, source_refs: semanticSourceRefs, confidentiality }));
+    const previousRevision = existing && typeof existing.record.revision_hash === "string" ? existing.record.revision_hash : undefined;
+    if (existing && previousRevision === revision) {
+      return { section_id: sectionId, section_uri: `kb://record/${encodeURIComponent(sectionId)}`, revision_hash: revision, previous_revision_hash: previousRevision, created: false, audit_event_id: String(existing.record.last_section_audit_id ?? "") };
+    }
+    if (!["in_progress", "blocked"].includes(work.record.status)) throw new Error("Knowledge section updates require an active work item in the same project");
+    if (existing && input.expected_revision !== previousRevision) throw new Error(`Knowledge section revision conflict: expected ${input.expected_revision ?? "<missing>"}, current ${previousRevision}`);
+    if (!existing && input.expected_revision) throw new Error("expected_revision must be omitted when creating a knowledge section");
+    if (existing) await this.writeDerived(`history/knowledge-sections/${safeName(sectionId)}/${safeName(now())}-${previousRevision?.slice(0, 12) ?? "unknown"}.md`, renderRecord(existing.record, existing.body));
+    await this.upsertRecord({
+      id: sectionId, type: "knowledge_section", title: input.title, status: "active", project_id: input.project_id,
+      created_by: existing?.record.created_by ?? input.actor, updated_by: input.actor, key, summary: input.summary, parent_ref: parentRef,
+      artifact_refs: artifactRefs, related_refs: relatedRefs, child_section_refs: asStrings(existing?.record.child_section_refs),
+      last_modified_work_id: input.work_id,
+      source_refs: uniqueStrings([...asStrings(existing?.record.source_refs), input.work_id, ...semanticSourceRefs]),
+      confidentiality,
+      revision_hash: revision, section_change_summary: input.change_summary, section_updated_at: now(),
+    }, markdown);
+    await this.updateSectionParentLinks(sectionId, typeof existing?.record.parent_ref === "string" ? existing.record.parent_ref : undefined, parentRef, input.actor);
+    const auditEventId = await this.appendAudit({ type: "knowledge_section_upserted", section_id: sectionId, project_id: input.project_id, work_id: input.work_id, actor: input.actor, created: !existing, previous_revision_hash: previousRevision, revision_hash: revision, artifact_refs: artifactRefs, change_summary: input.change_summary });
+    const written = await this.get(sectionId);
+    if (written) await this.upsertRecord({ ...written.record, created_by: written.record.created_by, last_section_audit_id: auditEventId }, written.body);
+    return { section_id: sectionId, section_uri: `kb://record/${encodeURIComponent(sectionId)}`, revision_hash: revision, previous_revision_hash: previousRevision, created: !existing, audit_event_id: auditEventId };
+  }
+
+  async brief(projectId: string, maximumConfidentiality: Confidentiality = "internal"): Promise<Record<string, unknown>> {
+    const items = (await this.records()).filter(item => confidentialityAllowed(item.record, maximumConfidentiality));
+    const records = items.map(item => item.record);
+    const projectItem = items.find(item => item.record.type === "project" && item.record.id === projectId) ?? null;
+    const project = projectItem?.record ?? null;
     const activeWork = records.filter(record => record.type === "work_item" && record.project_id === projectId && ["in_progress", "awaiting_closeout", "blocked"].includes(record.status));
-    const memories = records.filter(record => record.type === "memory" && record.project_id === projectId && record.status === "accepted").slice(0, 5);
-    return { project_id: projectId, project: project ? { id: project.id, title: project.title, status: project.status, mission: project.mission } : null, active_work: activeWork.map(record => ({ id: record.id, title: record.title, status: record.status })), accepted_memory: memories.map(record => ({ id: record.id, kind: record.kind, statement: record.statement, scope: record.scope })), generated_at: now() };
+    const memories = records.filter(record => record.type === "memory" && record.project_id === projectId && record.status === "accepted").sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 20);
+    const sections = records.filter(record => record.type === "knowledge_section" && record.project_id === projectId && record.status === "active");
+    const legacyEntries = records.filter(record => record.project_id === projectId && ["workstream", "deliverable"].includes(record.type));
+    const edges = this.graphEdges(records.filter(record => record.project_id === projectId || record.id === projectId));
+    const mainMarkdown = projectItem?.body ?? "";
+    const mainRevision = project && typeof project.main_revision === "string" ? project.main_revision : digest(mainMarkdown);
+    return {
+      project_id: projectId,
+      project: project ? { id: project.id, title: project.title, status: project.status, mission: project.mission } : null,
+      main_file: project ? { uri: `kb://project/${encodeURIComponent(projectId)}/main`, title: project.title, markdown: mainMarkdown, revision_hash: mainRevision, updated_at: project.updated_at } : null,
+      navigation: {
+        sections: sections.map(record => ({ ...this.graphNode(record), key: record.key, summary: record.summary, revision_hash: record.revision_hash, artifact_count: asStrings(record.artifact_refs).length, child_section_refs: asStrings(record.child_section_refs) })),
+        domain_records: legacyEntries.map(record => ({ ...this.graphNode(record), artifact_count: uniqueStrings([...asStrings(record.artifact_refs), ...asStrings(record.source_refs).filter(ref => ref.startsWith("artifact:"))]).length })),
+      },
+      graph: { node_count: records.filter(record => record.project_id === projectId || record.id === projectId).length, edge_count: edges.length },
+      active_work: activeWork.map(record => ({ id: record.id, title: record.title, status: record.status })),
+      accepted_memory: memories.map(record => ({ id: record.id, kind: record.kind, statement: record.statement, scope: record.scope })),
+      generated_at: now(),
+    };
   }
 
   async view(projectId: string, kind: ProjectViewKind): Promise<Record<string, unknown>> {
@@ -635,19 +951,21 @@ export class ProjectRuntime {
     return validateProjectRecords(scoped);
   }
 
-  async bootstrapProject(input: { project_id: string; title: string; mission: string; actor: string }): Promise<{ project_id: string; created: boolean; brief_uri: string }> {
+  async bootstrapProject(input: { project_id: string; title: string; mission: string; actor: string }): Promise<{ project_id: string; created: boolean; brief_uri: string; main_uri: string }> {
     if (!input.project_id.startsWith("project:")) throw new Error("project_id must use the stable project: prefix");
     const existing = await this.get(input.project_id);
     if (existing) {
       if (existing.record.type !== "project") throw new Error(`ID already belongs to ${existing.record.type}: ${input.project_id}`);
-      return { project_id: existing.record.id, created: false, brief_uri: `kb://project/${encodeURIComponent(existing.record.id)}/brief` };
+      return { project_id: existing.record.id, created: false, brief_uri: `kb://project/${encodeURIComponent(existing.record.id)}/brief`, main_uri: `kb://project/${encodeURIComponent(existing.record.id)}/main` };
     }
+    const mainBody = `# ${input.title}\n\n${input.mission}\n`;
     await this.upsertRecord({
       id: input.project_id, type: "project", title: input.title, status: "active", project_id: input.project_id, created_by: input.actor,
       mission: input.mission, owners: [input.actor], current_phase: "knowledge-system-bootstrap", derivation: "agent", validation_status: "verified",
-    }, `# ${input.title}\n\n${input.mission}\n`);
+      main_revision: digest(mainBody), section_refs: [],
+    }, mainBody);
     await this.appendAudit({ type: "project_bootstrap", project_id: input.project_id, actor: input.actor });
-    return { project_id: input.project_id, created: true, brief_uri: `kb://project/${encodeURIComponent(input.project_id)}/brief` };
+    return { project_id: input.project_id, created: true, brief_uri: `kb://project/${encodeURIComponent(input.project_id)}/brief`, main_uri: `kb://project/${encodeURIComponent(input.project_id)}/main` };
   }
 
   private async sourceRoots(): Promise<SourceRoot[]> {
@@ -852,8 +1170,15 @@ export class ProjectRuntime {
 
   async readResource(uriOrId: string, maximumConfidentiality: Confidentiality = "internal"): Promise<{ uri: string; title: string; text: string }> {
     if (uriOrId.startsWith("kb://project/")) {
-      const id = decodeURIComponent(uriOrId.split("/")[3] ?? "");
-      const brief = await this.brief(id);
+      const projectParts = uriOrId.split("/");
+      const id = decodeURIComponent(projectParts[3] ?? "");
+      if (projectParts[4] === "main") {
+        const project = await this.get(id);
+        if (!project || project.record.type !== "project") throw new Error(`Project main file not found: ${id}`);
+        if (!confidentialityAllowed(project.record, maximumConfidentiality)) throw new Error("Resource is outside this profile's confidentiality scope");
+        return { uri: uriOrId, title: project.record.title, text: project.body };
+      }
+      const brief = await this.brief(id, maximumConfidentiality);
       return { uri: uriOrId, title: `Project brief ${id}`, text: YAML.stringify(brief) };
     }
     const parts = uriOrId.startsWith("kb://") ? uriOrId.split("/") : [];
@@ -899,6 +1224,9 @@ export class ProjectRuntime {
       status: "ok", records: records.length, parsed_artifacts: records.filter(record => record.type === "artifact" && record.status === "parsed").length,
       failed_artifacts: records.filter(record => record.type === "artifact" && record.status === "failed").length,
       stale_artifacts: records.filter(record => record.type === "artifact" && record.status === "stale").length,
+      maintained_sections: records.filter(record => record.type === "knowledge_section" && record.status === "active").length,
+      agent_generated_artifacts: records.filter(record => record.type === "artifact" && record.source_kind === "agent_generated").length,
+      context_checkpoints: records.filter(record => record.type === "activity" && record.kind === "context_checkpoint").length,
       quarantined: records.filter(record => record.status === "quarantined").length,
       disputed: records.filter(record => record.status === "disputed").length,
       ingestion_jobs: records.filter(record => record.type === "ingestion_job").length, policy_version: POLICY_VERSION,

@@ -9,13 +9,15 @@ Use the Changyi Jiuan MCP server as the only authority for durable project knowl
 
 ## Default operating loop
 
-1. Call `kb_brief` with the project ID before broad searching.
-2. Use `kb_lookup` for exact fields; use `kb_search` for wording or unknown IDs. Read only returned `kb://` resources with `kb_read`; use `kb_outline` before a large normalized document.
-3. State evidence IDs and uncertainty in outputs. Do not treat quarantined, disputed, stale, or missing-evidence items as confirmed facts.
-4. Before work that changes deliverables or conclusions, call `kb_start_work` with concrete outputs and acceptance criteria.
-5. Whenever the Agent creates durable project material, call `kb_publish_resource` immediately. For a small final batch, include it as `generated_resources` in `kb_finish_work`. Do not leave the only copy in the client workspace or chat.
-6. At meaningful conversation checkpoints, call `kb_capture_context` with concise facts, explicit user decisions, procedures, lessons, constraints, preferences, and open questions. Submit distilled statements and evidence references, never the raw transcript. Use a precise scope key so unrelated facts do not conflict.
-7. Finish every started item with `kb_finish_work`, including partial or failed work. Supply the result hash, resources, evidence, unresolved items, and any remaining `knowledge_updates`. The server, not the agent, decides memory promotion.
+1. Always call `kb_brief` with the project ID first. Read the complete maintained main file and its section navigation; do not replace this step with a broad RAG dump.
+2. Select the relevant maintained section and call `kb_graph_context` to receive that subfile together with its linked artifacts. Use depth 1 by default.
+3. Proactively run `kb_search` for names, numbers, dates, versions, exact wording, evidence, or any other verifiable detail. A main file or section is orientation and synthesis, not sufficient evidence for a detail claim. Pass the original query to `kb_graph_context`, then use `kb_outline`/`kb_read` when a hit needs page-level precision.
+4. State evidence IDs and uncertainty in outputs. Do not treat quarantined, disputed, stale, or missing-evidence items as confirmed facts.
+5. Before work that changes deliverables or knowledge, call `kb_start_work` with concrete outputs and acceptance criteria.
+6. Maintain the hierarchy during the work: use `kb_update_main` only for stable project-wide cognition and routes; use `kb_upsert_section` for long-lived topic detail and artifact links. Always use the revision returned by `kb_brief` or the current section.
+7. Whenever the Agent creates durable project material, call `kb_publish_resource` immediately. For a small final batch, include it as `generated_resources` in `kb_finish_work`. Do not leave the only copy in the client workspace or chat.
+8. At meaningful conversation checkpoints, call `kb_capture_context` with concise facts, explicit user decisions, procedures, lessons, constraints, preferences, and open questions. Submit distilled statements and evidence references, never the raw transcript. Use a precise scope key so unrelated facts do not conflict.
+9. Finish every started item with `kb_finish_work`, including partial or failed work. Supply the result hash, resources, evidence, unresolved items, and any remaining `knowledge_updates`. The server, not the agent, decides memory promotion.
 
 Never request filesystem paths from the server, invent record IDs, or put credentials in an MCP call.
 
@@ -23,17 +25,20 @@ Never request filesystem paths from the server, invent record IDs, or put creden
 
 Use the smallest tool that answers the question:
 
-- Current overall context: `kb_brief`.
+- Complete project orientation and section routes: `kb_brief`.
+- One maintained topic plus its linked artifacts: `kb_graph_context`.
 - Exact status, owner, date, or type: `kb_lookup`.
-- Topic, phrase, or past decision: `kb_search` then `kb_read`.
+- Topic, phrase, past decision, or factual detail: `kb_search`, then `kb_graph_context` or `kb_read`.
 - A document’s shape: `kb_outline`, then `kb_read` for the needed resource or artifact page.
 - Canonical cross-cutting view: `kb_view` (for example, work plan, evidence ledger, risk register, or deliverables).
 
-Read profiles expose only `kb_brief`, `kb_lookup`, `kb_search`, `kb_outline`, `kb_view`, and `kb_read`; do not attempt mutation tools. Maintain profiles additionally expose work lifecycle, resource publication, and context capture. Restricted and secret records require the admin profile.
+Read profiles expose `kb_brief`, `kb_graph_context`, `kb_lookup`, `kb_search`, `kb_outline`, `kb_view`, and `kb_read`; do not attempt mutation tools. Maintain profiles additionally expose main/section maintenance, work lifecycle, resource publication, and context capture. Restricted and secret records require the admin profile.
 
 ## Autonomous persistence
 
 - Publish Markdown, text, JSON, CSV, generated documents, images, datasets, and code that will matter after the current task. Inline MCP publication is for small resources; use configured source ingestion for large files.
+- Keep the main file compact, stable, and navigational. Move topic detail into maintained sections; link each section to the artifacts that can verify or deepen it. Do not paste artifact bodies into the main file.
+- Update a section when new work changes its durable synthesis, artifact set, or routes. Leave raw artifacts immutable and preserve prior main/section revisions through the server.
 - Agent-generated resources are durable artifacts, not automatically verified evidence. Do not cite an Agent's own draft as proof of its factual claims.
 - Capture only project-relevant knowledge that would change future answers or actions. Skip casual conversation, duplicated phrasing, speculation, credentials, and personal data not required by the project.
 - A user decision, constraint, or preference requires a `user:` conversation reference; factual updates require evidence. The server may quarantine incomplete or conflicting updates.

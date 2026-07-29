@@ -1,5 +1,5 @@
 spec: changyi-jiuan-mcp-surface
-version: 0.1.1
+version: 0.2.0
 status: draft
 
 primary_clients:
@@ -17,11 +17,11 @@ profiles:
     tools: upstream_all
   project-read:
     purpose: query subagent knowledge access
-    tools: [kb_brief, kb_lookup, kb_search, kb_outline, kb_read, kb_view]
+    tools: [kb_brief, kb_graph_context, kb_lookup, kb_search, kb_outline, kb_read, kb_view]
   project-maintain:
     purpose: default orchestrator work lifecycle and automatic policy submission
     extends: project-read
-    tools: [kb_start_work, kb_finish_work]
+    tools: [kb_start_work, kb_update_main, kb_upsert_section, kb_publish_resource, kb_capture_context, kb_finish_work]
   project-admin:
     purpose: agent-managed ingestion, reconciliation, rebuild, and operations
     extends: project-maintain
@@ -29,6 +29,7 @@ profiles:
 
 resource_templates:
   - "kb://project/{project_id}/brief"
+  - "kb://project/{project_id}/main"
   - "kb://record/{record_id}"
   - "kb://artifact/{artifact_id}"
   - "kb://artifact/{artifact_id}/page/{page}"
@@ -57,10 +58,12 @@ tools:
   kb_brief:
     profile: project-read
     read_only: true
-    default_budget_tokens: 600
-    hard_limit_tokens: 1200
+    main_file: complete_and_untruncated
     required_input: [project_id]
-    output: [brief_version, generated_at, sections, source_links]
+    output: [main_file, navigation, graph, active_work, accepted_memory, generated_at]
+    rules:
+      - "must be the first project knowledge call"
+      - "main file is orientation and navigation, not sufficient detail evidence"
 
   kb_lookup:
     profile: project-read
@@ -83,6 +86,24 @@ tools:
     defaults:
       mode: auto
       include_unverified: false
+    rules:
+      - "agents proactively use detail RAG for names, numbers, dates, versions, exact wording, and evidence"
+      - "results include directly linked artifact handles"
+
+  kb_graph_context:
+    profile: project-read
+    read_only: true
+    required_input: [node_id]
+    optional_input: [query, depth, artifact_mode, max_nodes, max_artifacts, max_tokens]
+    defaults:
+      depth: 1
+      artifact_mode: excerpt
+      max_nodes: 30
+      max_artifacts: 5
+      max_tokens: 1800
+    rules:
+      - "graph is rebuilt from canonical record references"
+      - "linked artifact excerpts are returned as MCP resources"
 
   kb_outline:
     profile: project-read
@@ -120,7 +141,48 @@ tools:
     read_only: false
     required_input: [objective, expected_outputs, acceptance_criteria]
     optional_input: [input_refs]
-    output: [work_id, knowledge_version, brief_uri, closeout_requirements]
+    output: [work_id, knowledge_version, brief_uri, main_uri, closeout_requirements]
+
+  kb_update_main:
+    profile: project-maintain
+    read_only: false
+    idempotency_key: "project_id + revision_hash"
+    required_input: [project_id, work_id, markdown, expected_revision, change_summary]
+    optional_input: [source_refs]
+    rules:
+      - "requires an active same-project work item for a changed revision"
+      - "stale expected revisions are rejected"
+      - "previous main revisions are retained"
+      - "main file stays stable and navigational; details belong in sections"
+
+  kb_upsert_section:
+    profile: project-maintain
+    read_only: false
+    idempotency_key: "project_id + key + revision_hash"
+    required_input: [project_id, work_id, key, title, summary, markdown, change_summary]
+    optional_input: [parent_ref, artifact_refs, related_refs, source_refs, expected_revision, confidentiality]
+    rules:
+      - "server generates the stable section ID"
+      - "parent and artifact references must exist in the same project"
+      - "stale expected revisions are rejected"
+      - "main-to-section and section-to-artifact links are maintained automatically"
+
+  kb_publish_resource:
+    profile: project-maintain
+    read_only: false
+    required_input: [work_id, resource]
+    rules:
+      - "small text is searchable immediately"
+      - "binary documents can be normalized with MinerU"
+      - "Agent-generated resources are not automatically verified evidence"
+
+  kb_capture_context:
+    profile: project-maintain
+    read_only: false
+    required_input: [work_id, summary, updates]
+    rules:
+      - "stores distilled structured knowledge, never a raw transcript"
+      - "server policy accepts, quarantines, or rejects each update"
 
   kb_finish_work:
     profile: project-maintain
@@ -129,7 +191,7 @@ tools:
     default_response_budget_tokens: 500
     hard_response_limit_tokens: 1000
     required_input: [work_id, outcome, summary, result_hash]
-    optional_input: [artifacts, claims, decisions, lessons, unresolved, evidence_refs]
+    optional_input: [artifacts, generated_resources, claims, decisions, lessons, knowledge_updates, unresolved, evidence_refs]
     outcomes: [completed, partial, failed, cancelled]
     output:
       - work_status

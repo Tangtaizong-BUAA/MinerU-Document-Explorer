@@ -31,7 +31,7 @@ describe("Changyi Jiuan MCP profiles", () => {
       projectDataDir: await projectRoot(),
     });
 
-    expect(toolNames(server)).toEqual(["kb_brief", "kb_lookup", "kb_outline", "kb_read", "kb_search", "kb_view"]);
+    expect(toolNames(server)).toEqual(["kb_brief", "kb_graph_context", "kb_lookup", "kb_outline", "kb_read", "kb_search", "kb_view"]);
     expect(resourceTemplateNames(server)).toEqual(["project-record"]);
   });
 
@@ -44,6 +44,8 @@ describe("Changyi Jiuan MCP profiles", () => {
     expect(toolNames(server)).toContain("kb_start_work");
     expect(toolNames(server)).toContain("kb_publish_resource");
     expect(toolNames(server)).toContain("kb_capture_context");
+    expect(toolNames(server)).toContain("kb_update_main");
+    expect(toolNames(server)).toContain("kb_upsert_section");
     expect(toolNames(server)).toContain("kb_finish_work");
     expect(toolNames(server)).not.toContain("query");
   });

@@ -14,6 +14,7 @@ const COMMON = ["id", "type", "title", "status", "project_id", "created_at", "up
 const CONFIDENTIALITY = new Set(["public", "internal", "restricted", "secret"]);
 const TYPE_RULES: Record<string, { statuses: string[]; required: string[] }> = {
   project: { statuses: ["planned", "active", "paused", "completed", "archived"], required: ["mission"] },
+  knowledge_section: { statuses: ["active", "archived"], required: ["key", "summary", "parent_ref", "revision_hash"] },
   workstream: { statuses: ["planned", "active", "paused", "completed", "archived"], required: ["key", "objective"] },
   work_item: { statuses: ["planned", "in_progress", "awaiting_closeout", "blocked", "completed", "cancelled"], required: ["objective", "acceptance_criteria"] },
   activity: { statuses: ["planned", "active", "completed", "cancelled"], required: ["kind", "occurred_at"] },
@@ -37,7 +38,7 @@ function present(value: unknown): boolean {
 }
 
 function looksLikeProjectId(value: string): boolean {
-  return /^(project|workstream|work_item|activity|person|organization|location|artifact|evidence|claim|decision|deliverable|risk|issue|memory|validation_event):/.test(value);
+  return /^(project|section|workstream|work_item|activity|person|organization|location|artifact|evidence|claim|decision|deliverable|risk|issue|memory|validation_event):/.test(value);
 }
 
 export function validateProjectRecords(records: KnowledgeRecord[]): ValidationIssue[] {

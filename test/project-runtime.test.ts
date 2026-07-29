@@ -346,6 +346,23 @@ describe("ProjectRuntime", () => {
         await rt.upsertRecord({ id: "risk:cyj:restricted", type: "risk", title: "Restricted", status: "open", project_id: "proj-1", created_by: ACTOR, confidentiality: "restricted", probability: "high", impact: "high", owner: ACTOR, mitigation: "restricted" });
         await expect(rt.readResource("risk:cyj:restricted")).rejects.toThrow("confidentiality scope");
         expect((await rt.readResource("risk:cyj:restricted", "secret")).title).toBe("Restricted");
+
+        const workId = await startWorkFor(rt);
+        const section = await rt.upsertKnowledgeSection({
+          project_id: "proj-1", work_id: workId, key: "restricted-plan", title: "Restricted Plan", summary: "Restricted maintained project detail",
+          markdown: "# Restricted Plan\n\nConfidential detail.\n", change_summary: "Create restricted section", confidentiality: "restricted",
+          maximum_confidentiality: "secret", actor: ACTOR,
+        });
+        const normalBrief = await rt.brief("proj-1") as { navigation: { sections: Array<{ id: string }> } };
+        const adminBrief = await rt.brief("proj-1", "secret") as { navigation: { sections: Array<{ id: string }> } };
+        expect(normalBrief.navigation.sections).toHaveLength(0);
+        expect(adminBrief.navigation.sections[0]!.id).toBe(section.section_id);
+        await expect(rt.graphContext({ node_id: section.section_id })).rejects.toThrow("not found or not visible");
+        await expect(rt.upsertKnowledgeSection({
+          project_id: "proj-1", work_id: workId, key: "restricted-plan", title: "Restricted Plan", summary: "Restricted maintained project detail",
+          markdown: "# Restricted Plan\n\nChanged detail.\n", change_summary: "Unauthorized update", expected_revision: section.revision_hash,
+          maximum_confidentiality: "internal", actor: ACTOR,
+        })).rejects.toThrow("confidentiality scope");
       });
     });
   });
@@ -425,6 +442,90 @@ describe("ProjectRuntime", () => {
           else process.env.MINERU_API_KEY = originalKey;
           resetDocReadingConfig();
         }
+      });
+    });
+  });
+
+  describe("maintained main file, sections, and artifact graph", () => {
+    test("loads the complete main file and expands a maintained section into linked artifact evidence", async () => {
+      await withRuntime(async (rt) => {
+        await seedProject(rt);
+        const workId = await startWorkFor(rt);
+        const initialBrief = await rt.brief("proj-1") as { main_file: { revision_hash: string } };
+        const mainMarkdown = [
+          "# Test Project Main",
+          "",
+          "This complete main file orients the Agent before detail retrieval.",
+          "",
+          "## Navigation",
+          "",
+          "Use the field-practice section for field execution details.",
+          "",
+        ].join("\n");
+        const main = await rt.updateProjectMain({
+          project_id: "proj-1", work_id: workId, markdown: mainMarkdown,
+          expected_revision: initialBrief.main_file.revision_hash, change_summary: "Create maintained project main", actor: ACTOR,
+        });
+        expect(main.changed).toBe(true);
+        expect((await rt.readResource(main.main_uri)).text).toBe(mainMarkdown);
+
+        const artifact = await rt.publishResource({
+          work_id: workId, title: "Pianguan field source", filename: "pianguan.md", content_type: "text/markdown", encoding: "utf8",
+          content: "# Pianguan source\n\nThe local liaison meeting is scheduled before the wall survey.\n", kind: "document", actor: ACTOR,
+        });
+        const section = await rt.upsertKnowledgeSection({
+          project_id: "proj-1", work_id: workId, key: "field-practice", title: "Field Practice", summary: "Maintained field execution knowledge",
+          markdown: "# Field Practice\n\nCoordinate the Pianguan visit through verified source material.\n", change_summary: "Create field section",
+          artifact_refs: [artifact.artifact_id], source_refs: ["user:conversation:field-scope"], actor: ACTOR,
+        });
+
+        const brief = await rt.brief("proj-1") as { main_file: { markdown: string }; navigation: { sections: Array<{ id: string; artifact_count: number }> } };
+        expect(brief.main_file.markdown).toBe(mainMarkdown);
+        expect(brief.navigation.sections).toContainEqual(expect.objectContaining({ id: section.section_id, artifact_count: 1 }));
+        const project = (await rt.get("proj-1"))!.record;
+        expect(project.section_refs).toContain(section.section_id);
+
+        const context = await rt.graphContext({ node_id: section.section_id, query: "local liaison meeting", depth: 1, artifact_mode: "excerpt", max_tokens: 1200 });
+        expect(context.focus.content).toContain("Coordinate the Pianguan visit");
+        expect(context.edges).toContainEqual(expect.objectContaining({ from: section.section_id, to: artifact.artifact_id, relation: "uses_artifact" }));
+        expect(context.artifacts[0]).toEqual(expect.objectContaining({ id: artifact.artifact_id }));
+        expect(context.artifacts[0]!.excerpt).toContain("local liaison meeting");
+
+        const search = await rt.search("field execution knowledge", 5);
+        const sectionHit = search.find(item => item.record.id === section.section_id);
+        expect(sectionHit?.linked_artifacts?.[0]?.id).toBe(artifact.artifact_id);
+        expect((await rt.lint()).filter(issue => issue.severity === "error")).toEqual([]);
+      });
+    });
+
+    test("uses optimistic revisions for Agent-maintained main and section files", async () => {
+      await withRuntime(async (rt) => {
+        await seedProject(rt);
+        const workId = await startWorkFor(rt);
+        const initial = await rt.brief("proj-1") as { main_file: { revision_hash: string } };
+        const updated = await rt.updateProjectMain({
+          project_id: "proj-1", work_id: workId, markdown: "# Main\n\nVersion one.\n", expected_revision: initial.main_file.revision_hash,
+          change_summary: "First main revision", actor: ACTOR,
+        });
+        await expect(rt.updateProjectMain({
+          project_id: "proj-1", work_id: workId, markdown: "# Main\n\nVersion two.\n", expected_revision: initial.main_file.revision_hash,
+          change_summary: "Stale update", actor: ACTOR,
+        })).rejects.toThrow("revision conflict");
+
+        const created = await rt.upsertKnowledgeSection({
+          project_id: "proj-1", work_id: workId, key: "research", title: "Research", summary: "Long-lived research knowledge",
+          markdown: "# Research\n\nVersion one.\n", change_summary: "Create research section", actor: ACTOR,
+        });
+        const changed = await rt.upsertKnowledgeSection({
+          project_id: "proj-1", work_id: workId, key: "research", title: "Research", summary: "Long-lived research knowledge",
+          markdown: "# Research\n\nVersion two.\n", change_summary: "Update research section", expected_revision: created.revision_hash, actor: ACTOR,
+        });
+        expect(changed.revision_hash).not.toBe(created.revision_hash);
+        await expect(rt.upsertKnowledgeSection({
+          project_id: "proj-1", work_id: workId, key: "research", title: "Research", summary: "Long-lived research knowledge",
+          markdown: "# Research\n\nVersion three.\n", change_summary: "Stale section update", expected_revision: created.revision_hash, actor: ACTOR,
+        })).rejects.toThrow("revision conflict");
+        expect(updated.revision_hash).toHaveLength(64);
       });
     });
   });

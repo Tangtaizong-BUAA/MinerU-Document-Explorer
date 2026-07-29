@@ -81,7 +81,22 @@ decision:cyj:retrieval-profile-001
 - 里程碑、验收标准和最终成果；
 - 当前正式简报版本。
 
+`project` 记录的 Markdown 正文就是 Agent 长期维护的主文件；`main_revision` 防止并发覆盖，`section_refs` 是进入分文件的正式导航。主文件在每个 Agent 任务开始时完整加载，但只保存稳定的项目总认知和路由，不复制 artifact 细节。
+
 首期只有一个主项目，但保留 `project_id` 可避免记录脱离上下文。
+
+### 4.1.1 `knowledge_section`
+
+表示 Agent 长期维护的项目分文件：
+
+- 稳定 `key`、标题、摘要和完整 Markdown；
+- `parent_ref` 指向主项目或另一个分文件；
+- `child_section_refs` 表示更细的专题层级；
+- `artifact_refs` 指向能验证或深化本专题的原始/生成资源；
+- `related_refs` 链接工作流、成果、决策等领域记录；
+- `revision_hash`、旧版本与变更工作项保证可回退和并发安全。
+
+典型分文件包括科研与长城保护、社会实践与地方协同、申报竞赛与答辩、对外联络等。Agent 先由主文件选择分文件，再由图谱同步读取其 artifacts；具体事实仍应通过 RAG 和证据精读复核。
 
 ### 4.2 `workstream`
 

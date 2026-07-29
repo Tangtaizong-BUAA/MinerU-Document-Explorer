@@ -100,4 +100,53 @@ describe("Changyi Jiuan HTTP MCP", () => {
     const searched = await call("kb_search", { query: "Automatic closeout artifact", top_k: 3 });
     expect(searched.result.content[0]!.text).toContain("Automatic closeout report");
   });
+
+  test("returns complete main context and reads a maintained section with linked artifact RAG", async () => {
+    const server = await start("project-admin");
+    const endpoint = `http://127.0.0.1:${server.port}/mcp`;
+    const initialize = await fetch(endpoint, {
+      method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "graph-test", version: "1" } } }),
+    });
+    const session = initialize.headers.get("mcp-session-id")!;
+    let requestId = 2;
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const response = await fetch(endpoint, {
+        method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": session },
+        body: JSON.stringify({ jsonrpc: "2.0", id: requestId++, method: "tools/call", params: { name, arguments: args } }),
+      });
+      expect(response.status).toBe(200);
+      const body = await response.json() as { result: { isError?: boolean; structuredContent: Record<string, any>; content: Array<Record<string, any>> } };
+      expect(body.result.isError).not.toBe(true);
+      return body;
+    };
+    const projectId = "project:cyj:http-graph";
+    await call("kb_bootstrap_project", { project_id: projectId, title: "HTTP graph", mission: "Maintain main sections and linked artifact retrieval" });
+    const started = await call("kb_start_work", { project_id: projectId, objective: "Build maintained knowledge hierarchy", expected_outputs: ["main", "section"], acceptance_criteria: ["linked artifact returned"] });
+    const workId = started.result.structuredContent.work_id;
+    const initial = await call("kb_brief", { project_id: projectId });
+    const initialRevision = initial.result.structuredContent.main_file.revision_hash;
+    const mainMarkdown = "# HTTP Graph Main\n\nComplete project orientation.\n\n## Navigation\n\nUse the field section.\n";
+    await call("kb_update_main", { project_id: projectId, work_id: workId, markdown: mainMarkdown, expected_revision: initialRevision, change_summary: "Create main navigation" });
+    const published = await call("kb_publish_resource", {
+      work_id: workId,
+      resource: { title: "Field evidence", filename: "field.md", content_type: "text/markdown", encoding: "utf8", content: "# Field Evidence\n\nThe verified rendezvous is North Gate.\n", kind: "document" },
+    });
+    const artifactId = published.result.structuredContent.artifact_id;
+    const section = await call("kb_upsert_section", {
+      project_id: projectId, work_id: workId, key: "field", title: "Field", summary: "Maintained field execution details",
+      markdown: "# Field\n\nUse linked evidence for exact rendezvous details.\n", change_summary: "Create field section", artifact_refs: [artifactId],
+    });
+    const sectionId = section.result.structuredContent.section_id;
+    const brief = await call("kb_brief", { project_id: projectId });
+    expect(brief.result.content[0]!.text).toContain(mainMarkdown.trim());
+    expect(brief.result.structuredContent.navigation.sections[0].id).toBe(sectionId);
+    const graph = await call("kb_graph_context", { node_id: sectionId, query: "verified rendezvous", artifact_mode: "excerpt", depth: 1, max_tokens: 1200 });
+    expect(graph.result.structuredContent.artifacts[0].id).toBe(artifactId);
+    expect(graph.result.content.some(item => item.type === "resource" && item.resource.text.includes("North Gate"))).toBe(true);
+    const searched = await call("kb_search", { query: "field execution details", top_k: 5 });
+    const hit = searched.result.structuredContent.results.find((item: { id: string }) => item.id === sectionId);
+    expect(hit.linked_artifacts[0].id).toBe(artifactId);
+    await call("kb_finish_work", { work_id: workId, outcome: "completed", summary: "Hierarchy verified", result_hash: "http-graph-closeout-001", artifacts: [artifactId] });
+  });
 });

@@ -1,7 +1,7 @@
 interface:
   display_name: "长翼久安知识库操作"
   short_description: "自动归档资源并提炼长期项目知识"
-  default_prompt: "Use $changyi-jiuan-knowledge-operations to retrieve context, persist my outputs, and capture durable project knowledge."
+  default_prompt: "Use $changyi-jiuan-knowledge-operations to load the complete project main file, navigate maintained sections and linked artifacts, run proactive detail RAG, and persist durable outputs and knowledge."
 dependencies:
   tools:
     - type: "mcp"

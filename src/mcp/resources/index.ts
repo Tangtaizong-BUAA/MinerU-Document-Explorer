@@ -20,7 +20,7 @@ export function registerProjectResource(server: McpServer, runtime: ProjectRunti
     new ResourceTemplate("kb://{+path}", { list: undefined }),
     {
       title: "Changyi Jiuan knowledge record",
-      description: "A project record, memory, or generated project brief. Discover canonical URIs through kb_* tools.",
+      description: "A complete project main file, maintained knowledge section, domain record, memory, or linked artifact. Discover canonical URIs through kb_brief, kb_graph_context, and kb_search.",
       mimeType: "text/markdown",
     },
     async (uri) => {
