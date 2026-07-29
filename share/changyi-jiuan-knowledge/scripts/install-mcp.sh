@@ -50,4 +50,4 @@ fi
 
 codex mcp add "$server_name" --url "$server_url" --bearer-token-env-var "$token_env"
 echo "已安装 Skill：$skill_target"
-echo "已注册 $server_name。请重启 Codex App，并在新任务中先调用 kb_brief 验证访问。"
+echo "已注册 ${server_name}。请重启 Codex App，并在新任务中先调用 kb_brief 验证访问。"
