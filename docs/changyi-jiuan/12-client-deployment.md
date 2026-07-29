@@ -67,7 +67,7 @@ Authorization: Bearer $CYJ_MCP_BEARER_TOKEN
 生产拓扑遵守单写者原则：
 
 1. `https://argonai.cn/cyj/mcp` 始终是客户端唯一入口；阿里云 Nginx 负责 HTTPS 与上游选择。
-2. 家庭服务器的 `project-admin` 轻量容器绑定宿主机 `127.0.0.1:8793`，通过专用 frp TCP 代理映射到阿里云回环可用端口；该 frp 端口必须用防火墙拒绝非 loopback 访问。
+2. 家庭服务器的 `project-admin` 轻量容器绑定宿主机 `127.0.0.1:8793`，通过受限私有转发映射到阿里云回环端口。当前生产使用 `changyi-jiuan-home-tunnel.service`，复用现有 SSH/frp 链路且密钥只允许连接该端口；也可在维护窗口切换为专用 frp TCP 代理。阿里云转发端口必须拒绝非 loopback 访问。
 3. 阿里云另起 `project-read` 回退服务，读取家庭节点的定期只读快照。家庭上游不可达时，新的 MCP 会话可自动回退并继续问答，但不暴露写入、摄取或记忆维护工具。
 4. 已连接到失效主节点的会话需要由客户端重新初始化。禁止把同一会话 ID 跨节点伪装迁移。
 5. 家庭节点恢复后，先确认数据一致性，再让新会话重新优先家庭节点；回退节点不得接受写入，避免故障窗口形成双写分叉。
@@ -76,3 +76,5 @@ Authorization: Bearer $CYJ_MCP_BEARER_TOKEN
 家庭容器默认限制为 384 MiB 内存、768 MiB 内存加 swap、1.5 CPU、128 个进程，并启用只读根文件系统、`no-new-privileges`、会话过期回收和独立健康检查。`/data` 是唯一知识写卷；访问令牌和 MinerU 凭据仍只通过 `/etc/changyi-jiuan-mcp.env` 注入。
 
 切换顺序必须是：阿里云数据与配置快照 → 家庭节点部署 → 影子路径完整验收 → 只读回退验收 → 故障注入 → 正式 Nginx 原子替换与 reload。任一阶段失败时，不修改正式入口。
+
+阿里云端可复现单元位于 `deploy/systemd/`：`changyi-jiuan-home-tunnel.service` 维护主链路，`changyi-jiuan-mcp-standby.service` 提供只读回退，`changyi-jiuan-standby-sync.{service,timer}` 单向刷新快照，`cyj-frp-loopback-firewall.service` 封锁转发端口的非回环访问。Nginx 上游模板位于 `deploy/nginx/changyi-jiuan-home-primary.conf.example`。

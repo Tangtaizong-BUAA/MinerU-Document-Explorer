@@ -1,0 +1,21 @@
+[Unit]
+Description=Forward Alibaba loopback to Changyi Jiuan home MCP over the existing SSH FRP path
+After=network-online.target frps.service cyj-frp-loopback-firewall.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -NT -L 127.0.0.1:60193:127.0.0.1:8793 -p 60022 -i /root/.ssh/cyj-home-mcp-tunnel -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/.ssh/known_hosts -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 gongyuxuan@127.0.0.1
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=64M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target
