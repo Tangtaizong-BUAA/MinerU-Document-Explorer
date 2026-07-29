@@ -31,14 +31,28 @@ describe("Changyi Jiuan HTTP MCP", () => {
     expect(initialize.status).toBe(200);
     const session = initialize.headers.get("mcp-session-id");
     expect(session).toBeTruthy();
+    const initializeBody = await initialize.json() as { result: { serverInfo: { name: string; version: string } } };
+    expect(initializeBody.result.serverInfo).toEqual({ name: "changyi-jiuan-knowledge", version: "0.4.0" });
     const listed = await fetch(endpoint, {
       method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": session! },
       body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
     });
-    const result = await listed.json() as { result: { tools: Array<{ name: string }> } };
+    const result = await listed.json() as { result: { tools: Array<{ name: string; _meta?: Record<string, any> }> } };
     const names = result.result.tools.map(tool => tool.name);
     expect(names).toContain("kb_brief");
+    expect(names).toContain("kb_sync_skill");
     expect(names).not.toContain("kb_start_work");
+    expect(result.result.tools.find(tool => tool.name === "kb_brief")?._meta?.["cn.changyi-jiuan/client-contract"]?.required_skill?.version).toBe("0.4.0");
+
+    const sync = await fetch(endpoint, {
+      method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": session! },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "kb_sync_skill", arguments: { client: "codex", installed_version: "0.3.0" } } }),
+    });
+    const syncBody = await sync.json() as { result: { _meta: Record<string, any>; structuredContent: Record<string, any> } };
+    expect(syncBody.result.structuredContent.status).toBe("update_required");
+    expect(syncBody.result.structuredContent.delta.files.map((file: { path: string }) => file.path)).toContain("skill-version.json");
+    expect(syncBody.result.structuredContent._client_contract.required_skill.version).toBe("0.4.0");
+    expect(syncBody.result._meta["cn.changyi-jiuan/client-contract"].server_version).toBe("0.4.0");
 
     const legacy = await fetch(`http://127.0.0.1:${server.port}/query`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ searches: [] }) });
     expect(legacy.status).toBe(404);

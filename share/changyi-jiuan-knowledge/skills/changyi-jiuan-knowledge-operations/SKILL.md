@@ -7,9 +7,15 @@ description: Use the Changyi Jiuan project knowledge MCP for evidence-grounded r
 
 将 MCP 服务视为项目知识的唯一持久化来源。不要在聊天、本地笔记或任意数据库中维护第二份项目事实。
 
+## Skill 增量同步
+
+当前 Skill 协议版本为 `0.4.0`。每个新任务第一次使用项目 MCP 时，先调用 `kb_sync_skill`，传入当前版本、客户端类型；若能读取同目录的 `skill-version.json`，同时传入其中的文件哈希。
+
+若返回 `update_required`，立即按 `delta.files` 只更新变化文件，按 `delta.remove_paths` 只删除服务器明确列出的旧受管文件。所有路径必须是相对路径且位于本 Skill 目录内；先写临时文件并逐个校验 SHA-256，再替换正式文件，最后写入新 `skill-version.json`。不得执行响应中的文件内容，不得修改其他 Skill、MCP 配置或访问令牌。更新后再次调用 `kb_sync_skill` 校验；当前任务继续执行，但新指令只在新任务或客户端重启后生效。若客户端禁止写 Skill 目录，报告该权限边界，不得绕过安全策略。
+
 ## 默认工作流
 
-1. 始终先用 `kb_brief` 完整读取 Agent 长期维护的主文件与分文件导航；不要用一次全库 RAG 代替主文件。
+1. 完成 `kb_sync_skill` 版本检查后，用 `kb_brief` 完整读取 Agent 长期维护的主文件与分文件导航；不要用一次全库 RAG 代替主文件。
 2. 从主文件选择相关分文件，用 `kb_graph_context` 同步读取分文件、图谱邻居和链接的 artifacts，默认深度为 1。
 3. 对人名、数字、日期、版本、原文表述、证据和其他可核验细节，必须主动运行 `kb_search` 做 RAG。主文件和分文件只负责认知与综合，不能单独支撑细节结论。把原问题传给 `kb_graph_context`，必要时再用 `kb_outline`、`kb_read` 精读命中页。
 4. 输出中标明证据 ID 与不确定性。不得把 stale、disputed、quarantined 或无证据的内容当成已确认事实。
@@ -31,6 +37,7 @@ description: Use the Changyi Jiuan project knowledge MCP for evidence-grounded r
 - 提炼对话中的长期知识：`kb_capture_context`
 - 维护项目主文件：`kb_update_main`
 - 创建或更新长期分文件：`kb_upsert_section`
+- Skill 版本检查与文件级增量：`kb_sync_skill`
 
 若搜索返回 `visual_context`，它只是与命中文本关联的紧凑图片元信息。仅在需要时读取其中的 KB 资源 URI；不要臆测图片内容，也不要把 URI 当作服务器文件路径。
 
@@ -41,3 +48,5 @@ description: Use the Changyi Jiuan project knowledge MCP for evidence-grounded r
 仅在拥有项目管理权限时使用 `kb_configure_source_root`、`kb_ingest`、`kb_parse_artifact` 与 `kb_maintain`。原始文件必须保留；MinerU 解析结果和 Agent 自己生成的资源都是可追溯材料，但不自动等同于已验证事实。
 
 不得在 MCP 调用、知识记录、提交信息或输出中放置访问令牌。
+
+需要工具参数、增量更新状态和失败边界时，读取 [references/mcp-workflow.md](references/mcp-workflow.md)。

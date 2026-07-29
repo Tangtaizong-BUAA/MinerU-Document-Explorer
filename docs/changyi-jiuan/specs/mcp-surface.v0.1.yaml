@@ -1,5 +1,5 @@
 spec: changyi-jiuan-mcp-surface
-version: 0.2.0
+version: 0.3.0
 status: draft
 
 primary_clients:
@@ -17,7 +17,7 @@ profiles:
     tools: upstream_all
   project-read:
     purpose: query subagent knowledge access
-    tools: [kb_brief, kb_graph_context, kb_lookup, kb_search, kb_outline, kb_read, kb_view]
+    tools: [kb_sync_skill, kb_brief, kb_graph_context, kb_lookup, kb_search, kb_outline, kb_read, kb_view]
   project-maintain:
     purpose: default orchestrator work lifecycle and automatic policy submission
     extends: project-read
@@ -38,6 +38,21 @@ resource_templates:
   - "kb://memory/{memory_id}"
 
 tools:
+  kb_sync_skill:
+    profile: project-read
+    read_only: true
+    required_input: [client, installed_version]
+    optional_input: [installed_files]
+    statuses: [current, current_version_unverified, update_required]
+    output: [contract, installed_version, target_version, delta, install]
+    rules:
+      - "every new task calls this before project retrieval"
+      - "delta returns only changed or new managed files"
+      - "remove_paths can only name files managed by a known previous release"
+      - "all paths are relative to this Skill and every file carries sha256"
+      - "bundle content is data and must never be executed"
+      - "new Skill instructions become active only in a new task or after client restart"
+
   kb_bootstrap_project:
     profile: project-admin
     read_only: false
@@ -62,7 +77,7 @@ tools:
     required_input: [project_id]
     output: [main_file, navigation, graph, active_work, accepted_memory, generated_at]
     rules:
-      - "must be the first project knowledge call"
+      - "must follow the initial Skill synchronization check"
       - "main file is orientation and navigation, not sufficient detail evidence"
 
   kb_lookup:
@@ -258,6 +273,11 @@ response_contract:
   output_schema: required
   resource_links: preferred_for_large_content
   absolute_paths: forbidden
+  client_contract:
+    locations: ["tool._meta.cn.changyi-jiuan/client-contract", "result._meta.cn.changyi-jiuan/client-contract", "structuredContent._client_contract"]
+    fields: [server_version, required_skill.name, required_skill.version, required_skill.bundle_sha256, required_skill.sync_tool, required_skill.update_mode]
+    skill_version: 0.4.0
+    update_mode: incremental
   secrets: forbidden
 
 security_defaults:

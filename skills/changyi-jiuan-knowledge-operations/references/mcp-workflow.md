@@ -3,11 +3,13 @@
 ## Agent loop
 
 ```text
-complete main file -> choose maintained section -> graph context + linked artifacts
+incremental Skill sync -> complete main file -> choose maintained section -> graph context + linked artifacts
                    -> proactive detail RAG -> precise artifact/page read
                    -> start work -> maintain main/sections + publish resources
                    -> checkpoint distilled context -> finish work
 ```
+
+At the beginning of a new task, call `kb_sync_skill({ client, installed_version, installed_files })`. File hashes come from the local `skill-version.json` when it is readable. Apply only returned changed files and retired paths inside this Skill directory, verify each SHA-256, write the manifest last, and re-check. Do not execute bundle content. A successful update affects only a new task or restarted client because the current Skill text is already loaded.
 
 `kb://project/<id>/main` is the complete maintained project main file. `kb://record/<section-id>` addresses a maintained subfile. Registered artifacts expose `kb://artifact/<id>` and, after parsing, `kb://artifact/<id>/document` (and page resources where available).
 

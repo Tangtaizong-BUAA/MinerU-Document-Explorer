@@ -31,7 +31,21 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 ## 3. 首期外部工具面
 
-### 3.1 `kb_brief`
+### 3.1 `kb_sync_skill`
+
+用途：把 MCP Server 的运行版本与客户端 Agent Skill 版本绑定，并由 Agent 执行文件级增量更新。该工具对所有项目 profile 可见，是每个新任务的第一次项目 MCP 调用。
+
+输入：`client: codex/qoder/hermes/generic`、`installed_version`，以及可选的本地受管文件 `path + sha256` 清单。
+
+输出：服务版本、目标 Skill 版本、整包哈希，以及以下三种状态：
+
+- `current`：版本和文件哈希均一致；
+- `current_version_unverified`：版本一致但客户端未提供文件哈希；
+- `update_required`：返回 `delta.files`、`delta.remove_paths`、`unchanged_paths` 和新 manifest。
+
+增量只包含本 Skill 的相对路径、UTF-8 内容、文件哈希和大小。Agent 必须拒绝绝对路径和路径穿越，临时写入并逐个校验后再替换，最后写 manifest；只允许删除服务端旧版受管清单中明确退役的路径。响应内容永远作为数据处理，不作为命令执行。服务端不能直接写客户端磁盘；实际更新由具备客户端文件权限的 Agent 完成，当前任务已载入的 Skill 不做热替换，新版本从下一任务或重启后生效。
+
+### 3.2 `kb_brief`
 
 用途：每个 Agent 任务开始时，完整返回由 Agent 长期维护的项目主文件，并附加实时分文件导航、活跃工作和已接受结构化知识。
 
@@ -46,7 +60,7 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 主文件必须稳定、紧凑、可导航，包含项目身份、使命、目标、当前阶段、顶层结构和长期约束；详细内容放入分文件，原文与证据留在 artifacts。主文件不得替代细节 RAG。
 
-### 3.2 `kb_lookup`
+### 3.3 `kb_lookup`
 
 用途：优先用结构化字段查总体信息和记录。
 
@@ -60,13 +74,13 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 输出：仅返回请求字段、稳定 ID、标题和版本。正文通过资源 URI 按需读取。
 
-### 3.2.1 `kb_view`
+### 3.3.1 `kb_view`
 
 用途：从 canonical Markdown 记录即时重建项目总览、时间线、人员、成果、风险或质量视图。它只读且不落盘，不产生第二套可手工编辑的项目事实源。
 
 输入：`project_id` 与 `view`；`view` 为 `overview/timeline/people/deliverables/risks/quality` 之一。
 
-### 3.3 `kb_search`
+### 3.4 `kb_search`
 
 用途：跨长期分文件、领域记录、已接受记忆和规范化 artifacts 主动执行细节 RAG。凡涉及人名、数字、日期、版本、原文表述或证据，Agent 不得只凭主/分文件回答。
 
@@ -96,7 +110,7 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 - `kb://` resource link。
 - 分文件或领域节点直接链接的 artifact 句柄。
 
-### 3.4 `kb_graph_context`
+### 3.5 `kb_graph_context`
 
 用途：从主文件选定一个分文件或从 RAG 选定一个节点后，读取该节点正文，沿实时关系图展开 0–2 层邻居，并同步把链接 artifacts 作为 MCP resource 回传给 Agent。
 
@@ -104,7 +118,7 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 输出：焦点分文件、图谱节点和边、外部引用、artifact 元数据/相关摘录以及图片上下文。图由 `section_refs/parent_ref/artifact_refs/source_refs/evidence_refs/source_work_id` 等 canonical 字段实时生成，不维护第二套图数据库。
 
-### 3.5 `kb_outline`
+### 3.6 `kb_outline`
 
 用途：读取文档目录、PDF 页结构、PPT 页或工作表结构。
 
@@ -112,7 +126,7 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 输出：地址列表和极短标题，不返回正文。
 
-### 3.6 `kb_read`
+### 3.7 `kb_read`
 
 用途：精确读取资源局部内容。
 
@@ -125,7 +139,7 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 输出：带行号/页码/时间码的正文、来源和下一段 cursor。超过预算时截断并返回继续读取地址。
 
-### 3.7 `kb_start_work`
+### 3.8 `kb_start_work`
 
 用途：创建一次可追踪的 Agent 工作会话。
 
@@ -135,19 +149,19 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 该工具只创建工作记录，不授予额外文件或知识写权限。
 
-### 3.8 `kb_update_main`
+### 3.9 `kb_update_main`
 
 用途：由 Agent 在顶层项目认知真正变化时，整体更新长期主文件。输入必须包含活跃 `work_id`、完整 Markdown、从 `kb_brief` 读取的 `expected_revision`、变更摘要和来源引用。
 
 服务端使用 revision hash 拒绝并发覆盖，保存旧版本并追加审计。主文件超过安全长度时必须拆入分文件。
 
-### 3.9 `kb_upsert_section`
+### 3.10 `kb_upsert_section`
 
 用途：创建或更新一个长期维护分文件。每个分文件包含稳定 key、标题、摘要、完整 Markdown、父节点、关联 artifacts、相关记录、保密等级和 revision hash。
 
 服务端生成 section ID、校验引用、维护 `主文件 → 分文件 → artifact` 图链接、保存旧版本并拒绝陈旧 revision。更新必须属于活跃工作项。
 
-### 3.10 `kb_publish_resource`
+### 3.11 `kb_publish_resource`
 
 用途：让 Agent 将当前工作中生成的长期项目资源直接上传到服务器，并自动登记来源、内容哈希、工作项和保密等级。小型 Markdown、文本、JSON 和 CSV 会立即规范化并加入检索；PDF、Office 和图片登记后可继续调用 MinerU 解析。
 
@@ -157,7 +171,7 @@ Qoder、Hermes Agent 和 Codex 编排器的默认 profile。在 `project-read` �
 
 Agent 资源是持久材料但不是自动验证的事实证据。工具拒绝凭据/私钥特征、可执行文件、未知 MIME、越界文件名和已关闭工作项。
 
-### 3.11 `kb_capture_context`
+### 3.12 `kb_capture_context`
 
 用途：在长对话或长任务的关键节点，把会影响未来回答和行动的信息提炼为结构化知识候选，而不是上传原始聊天记录。
 
@@ -165,7 +179,7 @@ Agent 资源是持久材料但不是自动验证的事实证据。工具拒绝�
 
 输出逐条列出自动晋升、隔离、拒绝和 validation event。相同工作项与相同内容重复提交是幂等的。
 
-### 3.12 `kb_finish_work`
+### 3.13 `kb_finish_work`
 
 用途：幂等提交工作结果并关闭工作项。
 
@@ -191,7 +205,7 @@ Agent 资源是持久材料但不是自动验证的事实证据。工具拒绝�
 
 同一 `work_id + result_hash` 重试必须返回同一结果。
 
-### 3.13 `kb_ingest`
+### 3.14 `kb_ingest`
 
 用途：让摄取 Agent 在已配置的数据根目录内执行清单、解析、校验和增量索引。
 
@@ -201,7 +215,7 @@ Agent 资源是持久材料但不是自动验证的事实证据。工具拒绝�
 
 禁止任意绝对路径、未授权云外发和原地修改原件。
 
-### 3.14 `kb_reconcile_memory`
+### 3.15 `kb_reconcile_memory`
 
 用途：治理 Agent 为 `quarantined/disputed` 记忆补充证据、限定作用域、提交取代关系或请求重新校验。
 
@@ -211,7 +225,7 @@ Agent 资源是持久材料但不是自动验证的事实证据。工具拒绝�
 
 该工具不能指定最终接受结果；不存在 `force_accept`。
 
-### 3.15 `kb_maintain`
+### 3.16 `kb_maintain`
 
 用途：运维 Agent 执行健康检查、隔离队列重试、派生索引重建、备份和恢复验证。
 
@@ -245,7 +259,11 @@ kb://memory/<memory-id>
 - `structuredContent`，并声明输出 Schema；
 - 需要后续读取时返回 resource link；
 - `isError` 和可操作错误信息；
-- `_meta` 中的 trace、版本和预算信息，不把内部敏感信息放入正文。
+- `_meta.cn.changyi-jiuan/client-contract` 中的服务版本、要求的 Skill 版本、bundle hash 和同步工具；
+- `structuredContent._client_contract` 中同样提供紧凑版本契约，保证不能读取 `_meta` 的 Agent 仍能发现更新；
+- trace 和预算信息不把内部敏感信息放入正文。
+
+工具发现结果也携带相同版本契约。正常响应不重复传输 Skill 文件；只有 Agent 用旧版本调用 `kb_sync_skill` 时才返回变化文件，以控制 token 和网络开销。
 
 ## 6. 默认 token 预算
 

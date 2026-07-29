@@ -13,6 +13,8 @@ flowchart LR
     D --> E
     E --> F["低 token MCP 门面"]
     F --> G["Qoder / Hermes Agent / Codex"]
+    F --> K["版本契约与 Skill 文件级增量"]
+    K --> G
     G --> H["工作闭环<br/>开始、执行、回传"]
     H --> I["自动治理层<br/>校验、去重、策略裁决"]
     I --> D
@@ -117,6 +119,8 @@ flowchart LR
 - `project-read`：查询子 Agent 的精简只读接口；
 - `project-maintain`：Qoder、Hermes Agent、Codex 编排器的默认工作与回传接口；
 - `project-admin`：治理/运维 Agent 的摄取、修复、重校验和重建接口，不提供强制接受旁路。
+
+所有项目工具响应绑定同一服务/Skill 版本契约。Agent 每个新任务先比较本地 manifest，仅请求变化文件；服务端不远程执行客户端命令，也不传整包覆盖未变化文件。该机制让工作流说明可随 MCP 服务演进，同时保留客户端沙箱、哈希校验和新任务生效边界。
 
 ## 4. 建议代码边界
 

@@ -15,9 +15,9 @@ cd /path/to/changyi-jiuan-knowledge
 bash scripts/install-mcp.sh
 ```
 
-脚本会静默要求输入令牌，将内置 Skill 安装到 `${CODEX_HOME:-~/.codex}/skills/changyi-jiuan-knowledge-operations`，把 `changyi_jiuan_knowledge` 注册为全局 Codex MCP，并设置当前 macOS 登录会话所需的环境变量。
+脚本会静默要求输入令牌，将内置 Skill 以文件级增量安装到 `${CODEX_HOME:-~/.codex}/skills/changyi-jiuan-knowledge-operations`，把 `changyi_jiuan_knowledge` 注册为全局 Codex MCP，并设置当前 macOS 登录会话所需的环境变量。未变化的 Skill 文件不会重写，manifest 最后落盘。
 
-4. 重启 Codex App，打开一个新任务。Agent 会先调用 `kb_brief` 完整读取主文件和分文件导航；按需用 `kb_graph_context` 读取分文件及其 artifacts，并对具体细节主动执行 `kb_search` RAG。在项目工作中，它会用 `kb_update_main`/`kb_upsert_section` 维护长期认知、用 `kb_publish_resource` 自动归档产物，并用 `kb_capture_context` 提炼对话中的长期信息。
+4. 重启 Codex App，打开一个新任务。Agent 会先调用 `kb_sync_skill` 对比服务端和本地版本；若有更新，只回传并替换变化的文件，逐文件校验 SHA-256，新版本从下一任务生效。随后调用 `kb_brief` 完整读取主文件和分文件导航；按需用 `kb_graph_context` 读取分文件及其 artifacts，并对具体细节主动执行 `kb_search` RAG。在项目工作中，它会用 `kb_update_main`/`kb_upsert_section` 维护长期认知、用 `kb_publish_resource` 自动归档产物，并用 `kb_capture_context` 提炼对话中的长期信息。
 
 也可以直接把 [PROMPT-FOR-CODEX.md](PROMPT-FOR-CODEX.md) 连同本文件夹交给 Codex。
 
@@ -36,6 +36,8 @@ bash scripts/install-mcp.sh
 
 ## 自动维护闭环
 
+- 所有 MCP 工具定义和调用结果都携带服务版本、要求的 Skill 版本和 bundle hash；Agent 每个新任务自动调用 `kb_sync_skill`。
+- 更新按文件哈希增量返回，只能写当前 Skill 的相对路径；未知客户端文件不会被删除，响应内容不会作为命令执行。
 - 每个长翼久安相关任务先创建 `work_id`。
 - 主文件长期保存项目总认知和导航；分文件长期保存科研、实践、联络、竞赛等专题信息。两者都由 Agent 通过 revision 控制持续维护。
 - Agent 从主文件选择分文件；读取分文件时，服务器同步回传图谱链接的 artifact 摘录与图片上下文。具体人名、数据、版本和原文必须继续走 RAG 和证据精读。

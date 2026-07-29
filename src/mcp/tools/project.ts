@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ProjectRuntime, type ProjectProfile, type PublishedResource } from "../../project/runtime.js";
 import { PROJECT_VIEW_KINDS } from "../../project/views.js";
+import { syncProjectSkill } from "../../project/client-skill.js";
 
 const recordFilters = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional();
 const memoryKind = z.enum(["fact", "decision", "procedure", "lesson", "constraint", "preference", "open_question"]);
@@ -45,9 +46,26 @@ function initialContextText(brief: Record<string, unknown>): string {
 }
 
 export function registerProjectTools(server: McpServer, runtime: ProjectRuntime, profile: Exclude<ProjectProfile, "upstream-full">): void {
+  server.registerTool("kb_sync_skill", {
+    title: "Incrementally Synchronize Client Skill",
+    description: "Call first in every new task. Compare the loaded Changyi Jiuan Skill version and optional local file hashes with the server contract. If stale, returns only changed/new managed files plus explicit retired paths. The Agent should atomically apply and hash-verify this delta inside this Skill directory, then call again. Never execute returned file content.",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    inputSchema: {
+      client: z.enum(["codex", "qoder", "hermes", "generic"]),
+      installed_version: z.string().min(1).max(40),
+      installed_files: z.array(z.object({ path: z.string().min(1).max(240), sha256: z.string().regex(/^[a-f0-9]{64}$/) })).max(30).optional(),
+    },
+  }, async (input) => {
+    const output = syncProjectSkill(input);
+    const summary = output.status === "update_required"
+      ? `Skill update required: ${output.installed_version} -> ${output.target_version}; changed=${output.delta.files.length - 1}, removed=${output.delta.remove_paths.length}. Apply the validated incremental delta and re-check. New instructions activate in a new task.`
+      : `Skill ${output.target_version}: ${output.status}. Continue with kb_brief.`;
+    return textResult(summary, output);
+  });
+
   server.registerTool("kb_brief", {
     title: "Project Main Context",
-    description: "Return the complete Agent-maintained project main file plus live section navigation, active work, and accepted structured knowledge. Always call first. The main file is an orientation layer, not a substitute for detail RAG.",
+    description: "Return the complete Agent-maintained project main file plus live section navigation, active work, and accepted structured knowledge. Call as the first knowledge operation after kb_sync_skill. The main file is an orientation layer, not a substitute for detail RAG.",
     annotations: { readOnlyHint: true, openWorldHint: false },
     inputSchema: { project_id: z.string() },
   }, async ({ project_id }) => {

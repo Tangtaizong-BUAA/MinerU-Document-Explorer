@@ -18,6 +18,8 @@ import type { QMDStore, ExpandedQuery } from "../index.js";
 import { getDefaultDbPath } from "../index.js";
 import { getConfigPath, configExists } from "../collections.js";
 import { ProjectRuntime, resolveProjectProfile, resolveProjectRoot, type ProjectProfile } from "../project/runtime.js";
+import { PROJECT_MCP_SERVER_VERSION } from "../project/client-skill.js";
+import { installProjectToolVersioning } from "./project-versioning.js";
 
 // =============================================================================
 // Modular imports
@@ -53,7 +55,8 @@ export async function createMcpServer(store: QMDStore, options: ProjectMcpOption
     ? await buildInstructions(store)
     : [
         "Changyi Jiuan project knowledge base.",
-        "Always start with kb_brief: it returns the complete Agent-maintained project main file and section navigation.",
+        "On the first project MCP use in each task, call kb_sync_skill with the loaded Skill version. Automatically apply only its validated file delta when an update is required; new instructions take effect in a new task.",
+        "After Skill synchronization, call kb_brief: it returns the complete Agent-maintained project main file and section navigation.",
         "Use kb_graph_context to read a selected maintained section together with its linked artifacts.",
         "For names, numbers, versions, exact wording, or other verifiable detail, proactively run kb_search RAG and read the matching artifact; never answer detail from the main file alone.",
         "Maintain long-lived project cognition with kb_update_main and kb_upsert_section under an active work item.",
@@ -62,7 +65,9 @@ export async function createMcpServer(store: QMDStore, options: ProjectMcpOption
         "Memory promotion is policy-controlled; never claim quarantined evidence as established fact.",
       ].join("\n");
   const server = new McpServer(
-    { name: "mineru-document-explorer", version: "1.0.0" },
+    profile === "upstream-full"
+      ? { name: "mineru-document-explorer", version: "1.0.0" }
+      : { name: "changyi-jiuan-knowledge", version: PROJECT_MCP_SERVER_VERSION },
     { instructions },
   );
 
@@ -70,6 +75,7 @@ export async function createMcpServer(store: QMDStore, options: ProjectMcpOption
     if (!projectRoot) throw new Error("CYJ_KB_ROOT or projectDataDir is required for a project MCP profile");
     const runtime = new ProjectRuntime(projectRoot);
     await runtime.initialize();
+    installProjectToolVersioning(server);
     registerProjectResource(server, runtime, profile);
     registerProjectTools(server, runtime, profile);
     return server;
