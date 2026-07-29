@@ -1,0 +1,13 @@
+[Unit]
+Description=Restrict Changyi Jiuan frp MCP port to Alibaba loopback
+After=network-pre.target frps.service
+Before=nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c '/usr/sbin/iptables -C INPUT ! -i lo -p tcp --dport 60193 -j DROP 2>/dev/null || /usr/sbin/iptables -I INPUT 1 ! -i lo -p tcp --dport 60193 -j DROP'
+ExecStop=/bin/sh -c '/usr/sbin/iptables -C INPUT ! -i lo -p tcp --dport 60193 -j DROP 2>/dev/null && /usr/sbin/iptables -D INPUT ! -i lo -p tcp --dport 60193 -j DROP || true'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

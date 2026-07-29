@@ -1,0 +1,31 @@
+[Unit]
+Description=Changyi Jiuan MCP read-only Alibaba fallback
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=changyi-kb
+Group=changyi-kb
+WorkingDirectory=/opt/changyi-jiuan-mcp/app
+Environment=NODE_ENV=production
+Environment=HOME=/var/lib/changyi-kb-standby
+Environment=CYJ_MCP_PROFILE=project-read
+Environment=CYJ_KB_ROOT=/var/lib/changyi-kb-standby/data
+EnvironmentFile=-/etc/changyi-jiuan-mcp.env
+ExecStart=/usr/local/bin/node /opt/changyi-jiuan-mcp/app/dist/cli/qmd.js mcp --http --port 8794
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/changyi-kb-standby
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=384M
+CPUQuota=40%
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

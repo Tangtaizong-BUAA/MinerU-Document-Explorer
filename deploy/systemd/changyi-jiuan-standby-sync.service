@@ -1,0 +1,15 @@
+[Unit]
+Description=Pull Changyi Jiuan knowledge snapshot from home primary
+After=network-online.target frps.service
+Wants=network-online.target
+ConditionPathExists=/root/.ssh/cyj-home-standby
+
+[Service]
+Type=oneshot
+Environment="RSYNC_RSH=/usr/bin/ssh -p 60022 -i /root/.ssh/cyj-home-standby -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/.ssh/known_hosts"
+ExecStart=/usr/bin/flock -n /run/lock/cyj-standby-sync.lock /usr/bin/rsync -a --delete-delay --delay-updates --chown=changyi-kb:changyi-kb --timeout=60 gongyuxuan@127.0.0.1:/ /var/lib/changyi-kb-standby/data/
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target
