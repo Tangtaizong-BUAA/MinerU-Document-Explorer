@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { changePacketSchema, validateMaintenancePlan, type ChangePacket, type MaintenancePlan } from "./contracts.js";
+import { MAINTENANCE_PROMPT_VERSION, MAINTENANCE_TOOL_SCHEMA_VERSION, changePacketSchema, validateMaintenancePlan, type ChangePacket, type MaintenancePlan } from "./contracts.js";
 
 export type MsAgentAdapterOptions = {
   pythonExecutable?: string;
@@ -15,6 +15,31 @@ export type MsAgentAdapterOptions = {
 
 function defaultWorkerPath(): string {
   return fileURLToPath(new URL("../../backends/python/cyj_maintenance_worker.py", import.meta.url));
+}
+
+export function normalizeModelMaintenancePlan(packet: ChangePacket, input: unknown): unknown {
+  if (!input || typeof input !== "object") return input;
+  const raw = input as Record<string, unknown>;
+  const operations = Array.isArray(raw.operations) ? raw.operations.map(operation => {
+    if (!operation || typeof operation !== "object") return operation;
+    const value = operation as Record<string, unknown>;
+    if ((value.op === "patch_main" || value.op === "patch_section") && (!value.patch || typeof value.patch !== "object")) {
+      const { op, ...patch } = value;
+      return { op, patch };
+    }
+    return operation;
+  }) : raw.operations;
+  return {
+    ...raw,
+    schema: "cyj-maintenance-plan/v1",
+    packet_id: packet.packet_id,
+    base_knowledge_revision: packet.base_revisions.knowledge_revision,
+    expected_topology_revision: packet.base_revisions.topology_revision,
+    prompt_version: MAINTENANCE_PROMPT_VERSION,
+    tool_schema_version: MAINTENANCE_TOOL_SCHEMA_VERSION,
+    operations,
+    native_video_evidence_ids: Array.isArray(raw.native_video_evidence_ids) ? raw.native_video_evidence_ids : [],
+  };
 }
 
 export class MsAgentMaintenanceAdapter {
@@ -42,7 +67,7 @@ export class MsAgentMaintenanceAdapter {
       options: { model: this.options.model, base_url: this.options.baseUrl },
     });
     if (response.request_id !== requestId || response.ok !== true) throw new Error(String(response.error ?? "Invalid MS-Agent worker response"));
-    return validateMaintenancePlan(packet, response.result);
+    return validateMaintenancePlan(packet, normalizeModelMaintenancePlan(packet, response.result));
   }
 
   async selfTest(): Promise<Record<string, unknown>> {

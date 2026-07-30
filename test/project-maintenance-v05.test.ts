@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMcpServer } from "../src/mcp/server.js";
-import { MsAgentMaintenanceAdapter } from "../src/project/maintenance/ms-agent-adapter.js";
+import { MsAgentMaintenanceAdapter, normalizeModelMaintenancePlan } from "../src/project/maintenance/ms-agent-adapter.js";
 import { MAINTENANCE_PROMPT_VERSION, MAINTENANCE_TOOL_SCHEMA_VERSION, validateMaintenancePlan, type ChangePacket } from "../src/project/maintenance/contracts.js";
 import { authenticatePrincipal, canResolveConflicts, tokenSha256 } from "../src/project/principals.js";
 import { ProjectRuntime } from "../src/project/runtime.js";
@@ -75,6 +75,17 @@ describe("0.5 maintenance security boundary", () => {
     expect(worker).toContain("prioritize the project main file");
     expect(worker).toContain("base_revisions.knowledge_revision");
     expect(config).toContain("max_tokens: 3000");
+  });
+
+  test("normalizes model-owned plan envelopes and flattened patch objects before strict validation", () => {
+    const input = packet(); input.evidence_refs = ["artifact:release"];
+    const normalized = normalizeModelMaintenancePlan(input, {
+      schema: "wrong", packet_id: "wrong", prompt_version: "wrong", tool_schema_version: "wrong",
+      operations: [{ op: "patch_main", target_ref: "project:cyj", expected_revision: "main-revision", block_key: "heading:Runtime status", previous_block_hash: "a".repeat(64), replacement_markdown: "Current release.", evidence_refs: ["artifact:release"], reason: "Replace stale current state" }],
+    });
+    expect(validateMaintenancePlan(input, normalized).operations[0]).toMatchObject({
+      op: "patch_main", patch: { target_ref: "project:cyj", evidence_refs: ["artifact:release"] },
+    });
   });
 
   test("uses SHA-256 over the exact resolution statement", () => {
