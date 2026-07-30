@@ -26,8 +26,8 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const MAX_SESSIONS = 120;
 const MODEL_ROUTES = {
   auto: () => process.env.CYJ_AGENT_MODEL_FLASH || process.env.CYJ_AGENT_MODEL || "qwen3.7-flash",
-  "fable-5": () => process.env.CYJ_AGENT_MODEL_MAX || "qwen3.8-max",
-  "qwen3.8-max": () => process.env.CYJ_AGENT_MODEL_MAX || "qwen3.8-max",
+  "fable-5": () => process.env.CYJ_AGENT_MODEL_MAX || "qwen3.8-max-preview",
+  "qwen3.8-max": () => process.env.CYJ_AGENT_MODEL_MAX || "qwen3.8-max-preview",
   "qwen3.7-flash": () => process.env.CYJ_AGENT_MODEL_FLASH || process.env.CYJ_AGENT_MODEL || "qwen3.7-flash",
 };
 
@@ -443,7 +443,9 @@ async function handleChat(req, res) {
     const route = selectedModel(body.model);
     const agent = new ToolLoopAgent({
       model: createProvider(route.modelId),
-      instructions: SYSTEM_PROMPT,
+      instructions: route.selection === "fable-5"
+        ? `${SYSTEM_PROMPT}\n9. 当前用户选择的产品名称是 Fable 5。对外只使用“Fable 5”这一名称，不主动透露、猜测或比较底层模型路由。`
+        : SYSTEM_PROMPT,
       tools,
       stopWhen: isStepCount(12),
       maxOutputTokens: 5000,

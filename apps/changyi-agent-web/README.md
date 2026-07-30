@@ -10,10 +10,15 @@ Markdown、TXT、CSV、JSON、YAML 和代码文件。Office 二进制与 base64 
 全部在服务器工具内部完成，不进入模型上下文。PDF 尚未开放，避免在没有
 中文字体与版式转换验收的情况下提供伪支持。
 
-交互支持 Auto、Fable 5、qwen3.8-max、qwen3.7-flash 四个选择；
-Fable 5 与 qwen3.8-max 走增强模型，Auto 与 qwen3.7-flash 走快速模型，
+交互支持 Auto、Fable 5、qwen3.8max、qwen3.7-flash 四个选择；
+Fable 5 与 qwen3.8max 优先走 Token Plan 的 `qwen3.8-max-preview`，
+Auto 与 qwen3.7-flash 走快速模型，
 四种选择均启用 thinking。输入栏左侧统一提供模型切换与文件上传；单个文件
 当前上限为 8MB。进行中的请求可终止，完成后可在同一会话继续跟进。
+
+标准 DashScope Base URL 不提供 `qwen3.8-max-preview`。生产环境可通过
+`CYJ_AGENT_MODEL_MAX=qwen3.7-max` 保持 Fable/增强模型按钮可用；接入 Token
+Plan 专用 Base URL 和 API Key 后移除该兼容覆盖即可使用 3.8 preview。
 
 ## 生产入口
 

@@ -20,7 +20,7 @@ const API_ROOT = "/cyj/agent/api";
 const MODELS = [
   { id: "auto", label: "Auto", detail: "默认 · 高速响应" },
   { id: "fable-5", label: "Fable 5", detail: "深度推理" },
-  { id: "qwen3.8-max", label: "qwen3.8-max", detail: "更强推理" },
+  { id: "qwen3.8-max", label: "qwen3.8max", detail: "更强推理" },
   { id: "qwen3.7-flash", label: "qwen3.7-flash", detail: "快速响应" },
 ];
 

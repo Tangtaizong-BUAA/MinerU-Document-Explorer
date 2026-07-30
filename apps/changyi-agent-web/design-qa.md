@@ -9,7 +9,7 @@ References: `Prototype.png`, `codex-clipboard-55f8f096-3c15-44ee-b7d9-4e1b74de0e
 - User turns retain a rounded bubble; Agent output is unboxed and reads directly on the page.
 - Internal command counts are replaced with human-readable knowledge-work status.
 - Output streams progressively and generated resources appear as downloadable file cards.
-- Upload, Auto/Fable 5/qwen3.8-max/qwen3.7-flash selection, stop, and follow-up remain available without adding permanent chrome.
+- Upload, Auto/Fable 5/qwen3.8max/qwen3.7-flash selection, stop, and follow-up remain available without adding permanent chrome.
 
 ## Browser verification
 
@@ -29,10 +29,13 @@ References: `Prototype.png`, `codex-clipboard-55f8f096-3c15-44ee-b7d9-4e1b74de0e
 - Web unit/integration suite: 18/18 passed.
 - Focused project runtime and HTTP MCP suite: 25/25 passed.
 - Production web build and root TypeScript build: passed.
-- Authenticated Alibaba endpoint, live upload persistence, and project-technology semantic smoke query: pending deployment of 0.5.2.
+- Alibaba loopback health endpoint reports live 0.5.2; public unauthenticated access remains protected by Basic Auth.
+- Live upload persistence passed with `artifact:cyj:857b92831b6c2f2a795a1e64`.
+- Live “技术细节是什么” query returned 城脉 CT、空地协同、32 线激光雷达、IMU+GNSS、SLAM、五拼镜头与毫米级三维重建 rather than knowledge-system architecture.
+- Fable 5 completed a live knowledge answer through the production `qwen3.7-max` compatibility route. The requested `qwen3.8-max-preview` requires a Token Plan endpoint/key that is not currently configured.
 
 ## Known boundary
 
 - Version 0.5.2 accepts up to 8 MB per uploaded file. Larger source documents require the subsequent resumable/chunked transfer path; the UI and server fail closed instead of pretending they were persisted.
 
-final result: local implementation passed; production verification pending
+final result: passed, with the documented Token Plan model and 8 MB upload boundaries

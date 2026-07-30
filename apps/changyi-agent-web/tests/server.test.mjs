@@ -30,8 +30,8 @@ test("health endpoint is scoped to the agent base path", async () => {
 
 test("model selections use the requested routing policy", () => {
   assert.equal(selectedModel("auto").modelId, "qwen3.7-flash");
-  assert.equal(selectedModel("fable-5").modelId, "qwen3.8-max");
-  assert.equal(selectedModel("qwen3.8-max").modelId, "qwen3.8-max");
+  assert.equal(selectedModel("fable-5").modelId, "qwen3.8-max-preview");
+  assert.equal(selectedModel("qwen3.8-max").modelId, "qwen3.8-max-preview");
   assert.equal(selectedModel("qwen3.7-flash").modelId, "qwen3.7-flash");
 });
 
