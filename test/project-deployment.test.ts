@@ -20,6 +20,8 @@ describe("Changyi Jiuan client deployment templates", () => {
     const compose = await readFile(join(root, "deploy", "home", "compose.yaml"), "utf8");
 
     expect(dockerfile).toContain("--no-deps --index-url \"$PIP_INDEX_URL\" ms-agent==1.6.0");
+    expect(dockerfile).toContain("apt-get install -y --no-install-recommends build-essential");
+    expect(dockerfile).toContain("apt-get purge -y --auto-remove build-essential");
     expect(requirements).not.toMatch(/^ms-agent(?:==|\s)/m);
     for (const forbidden of ["torch", "sentence-transformers", "faiss", "matplotlib", "pandas", "moviepy", "edge-tts"]) {
       expect(requirements.toLowerCase()).not.toContain(forbidden);

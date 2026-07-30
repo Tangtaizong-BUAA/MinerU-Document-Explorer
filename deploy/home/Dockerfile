@@ -21,7 +21,14 @@ COPY --from=python-runtime /usr/local /usr/local
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
+# better-sqlite3 normally uses a prebuilt binary. Keep the image reproducible
+# when that download is unavailable by compiling it, then remove the temporary
+# toolchain in the same layer so it is absent from the runtime image.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && npm ci --omit=dev --no-audit --no-fund \
+    && apt-get purge -y --auto-remove build-essential \
+    && rm -rf /var/lib/apt/lists/* /root/.cache/node-gyp
 
 COPY dist ./dist
 
