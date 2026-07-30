@@ -23,7 +23,7 @@
 }
 ```
 
-只有家庭 loopback 的 `project-ops` 与维护 Worker 需要 MinerU/MS-Agent 环境：分别通过 `MINERU_API_KEY`、`DASHSCOPE_API_KEY` 注入，安装 `mineru-open-sdk` 与 `ms-agent==1.6.0`；设置 `CYJ_PYTHON_BIN/CYJ_MAINTENANCE_PYTHON` 指向隔离解释器。上述凭据与绝对路径均不得提交到仓库。
+只有家庭 loopback 的 `project-ops` 与维护 Worker 需要 MinerU/MS-Agent 环境：分别通过 `MINERU_API_KEY`、`DASHSCOPE_API_KEY` 注入，安装 `mineru-open-sdk` 与 `ms-agent==1.6.0`；设置 `CYJ_PYTHON_BIN/CYJ_MAINTENANCE_PYTHON` 指向隔离解释器。家庭镜像对 MS-Agent 使用 `--no-deps`，并由 `deploy/home/requirements.txt` 显式锁定已通过受限工具加载和真实 Qwen 维护闭环的最小运行依赖，禁止把默认依赖中的本地 Torch/CUDA/embedding 栈带入服务器。上述凭据与绝对路径均不得提交到仓库。
 
 Codex、Qoder 和 Hermes Agent 均使用此标准形态。需要共享服务时，Hermes 可启动 `qmd mcp --http --port 8181`，仅绑定 localhost；项目 profile 的旧 `/query` 与 `/search` REST 接口被服务器拒绝，所有工作走 `/mcp`。
 

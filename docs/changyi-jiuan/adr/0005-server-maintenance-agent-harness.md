@@ -34,6 +34,8 @@ MS-Agent 1.6 明确支持 Agent 多模态消息中的图片与视频、OpenAI-co
 
 MS-Agent 不拥有项目状态。本项目模型阶段没有真实写副作用；Worker 崩溃时丢弃计划并从持久 ChangePacket 重试，比把 canonical 状态托管给 Agent 框架更安全。
 
+资源受限节点只安装该 Worker 实际使用的 MS-Agent 运行面。`ms-agent==1.6.0` 本体以 `--no-deps` 锁定，显式依赖清单位于 `deploy/home/requirements.txt`；本地训练、向量化、绘图和媒体编辑依赖不进入镜像。项目的全模态理解来自 DashScope 原生 API，不在服务器本地加载 Torch/CUDA 模型。
+
 ## 备选方案
 
 - **LangGraph.js**：若未来出现跨天、多级暂停恢复和复杂分支，作为第二候选；当前会重复已有 queue/revision 状态机。

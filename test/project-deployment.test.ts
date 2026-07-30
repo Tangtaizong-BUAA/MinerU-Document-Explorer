@@ -13,4 +13,18 @@ describe("Changyi Jiuan client deployment templates", () => {
       expect(server.env.CYJ_KB_ROOT).toBe("__ABSOLUTE_KNOWLEDGE_DATA_ROOT__");
     });
   }
+
+  test("home maintenance image keeps MS-Agent on the verified lightweight runtime surface", async () => {
+    const dockerfile = await readFile(join(root, "deploy", "home", "Dockerfile"), "utf8");
+    const requirements = await readFile(join(root, "deploy", "home", "requirements.txt"), "utf8");
+
+    expect(dockerfile).toContain("--no-deps --index-url \"$PIP_INDEX_URL\" ms-agent==1.6.0");
+    expect(requirements).not.toMatch(/^ms-agent(?:==|\s)/m);
+    for (const forbidden of ["torch", "sentence-transformers", "faiss", "matplotlib", "pandas", "moviepy", "edge-tts"]) {
+      expect(requirements.toLowerCase()).not.toContain(forbidden);
+    }
+    for (const required of ["mineru-open-sdk==0.2.5", "openai==1.109.1", "modelscope==1.31.0", "mcp==2.0.0", "Pillow==11.3.0"]) {
+      expect(requirements).toContain(required);
+    }
+  });
 });
