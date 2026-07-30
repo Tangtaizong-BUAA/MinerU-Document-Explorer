@@ -22,7 +22,7 @@ test("health endpoint is scoped to the agent base path", async () => {
     assert.deepEqual(await response.json(), {
       ok: true,
       service: "changyi-jiuan-agent-web",
-      version: "0.5.2",
+      version: "0.5.3",
       mode: "demo",
     });
   });

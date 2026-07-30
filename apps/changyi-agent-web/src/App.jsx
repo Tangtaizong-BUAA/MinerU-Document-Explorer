@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  ArrowBendDownRight,
   ArrowDown,
   ArrowUp,
   Check,
@@ -18,10 +18,10 @@ import {
 
 const API_ROOT = "/cyj/agent/api";
 const MODELS = [
-  { id: "auto", label: "Auto", detail: "默认 · 高速响应" },
+  { id: "auto", label: "Auto" },
   { id: "fable-5", label: "Fable 5", detail: "深度推理" },
-  { id: "qwen3.8-max", label: "qwen3.8max", detail: "更强推理" },
-  { id: "qwen3.7-flash", label: "qwen3.7-flash", detail: "快速响应" },
+  { id: "qwen3.8-max", label: "qwen3.8 max", detail: "更强推理" },
+  { id: "qwen3.7-flash", label: "qwen3.7-flash", detail: "高速响应" },
 ];
 
 const statusIcons = { brief: Sparkle, search: MagnifyingGlass, read: File, publish: File, closeout: Check, done: Check, stopped: Stop, error: WarningCircle };
@@ -44,22 +44,36 @@ function WorkStatus({ status, active }) {
   </div>;
 }
 
-function Message({ message, onFollowUp }) {
-  if (message.role === "user") return <div className="user-row"><div className="user-bubble">{message.text}</div></div>;
-  return <article className="agent-turn">
+function Message({ message, questionRef, active }) {
+  if (message.role === "user") return <div className={`user-row ${active ? "is-active-question" : ""}`} ref={active ? questionRef : undefined}><div className="user-bubble">{message.text}</div></div>;
+  return <article className={`agent-turn ${message.pending ? "is-active" : ""}`}>
     <WorkStatus status={message.status} active={message.pending} />
     {message.text && <div className="answer-copy"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown></div>}
     {message.artifacts?.length > 0 && <div className="artifact-list">{message.artifacts.map((artifact) => <ArtifactCard key={artifact.id || artifact.downloadUrl} artifact={artifact} />)}</div>}
     {message.error && <p className="turn-error">{message.error}</p>}
-    {!message.pending && !message.error && message.text && <button className="follow-up" type="button" onClick={onFollowUp}><ArrowBendDownRight size={15} />跟进</button>}
   </article>;
 }
 
-function Composer({ value, onChange, onSubmit, pending, onStop, compact, model, onModel, attachments, onFiles, onRemoveAttachment, inputRef }) {
+function Composer({ value, onChange, onSubmit, pending, onStop, compact, model, onModel, attachments, onFiles, onRemoveAttachment }) {
   const textareaRef = useRef(null);
   const fileRef = useRef(null);
   const menuRef = useRef(null);
   const [open, setOpen] = useState(false);
+  const [menuMounted, setMenuMounted] = useState(false);
+
+  function openMenu() {
+    setMenuMounted(true);
+    requestAnimationFrame(() => setOpen(true));
+  }
+
+  function closeMenu() {
+    setOpen(false);
+  }
+
+  function toggleMenu() {
+    if (open || menuMounted) closeMenu();
+    else openMenu();
+  }
 
   useEffect(() => {
     const node = textareaRef.current;
@@ -69,11 +83,7 @@ function Composer({ value, onChange, onSubmit, pending, onStop, compact, model, 
   }, [value, compact]);
 
   useEffect(() => {
-    if (inputRef) inputRef.current = textareaRef.current;
-  }, [inputRef]);
-
-  useEffect(() => {
-    const close = (event) => { if (open && !menuRef.current?.contains(event.target)) setOpen(false); };
+    const close = (event) => { if (open && !menuRef.current?.contains(event.target)) closeMenu(); };
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
   }, [open]);
@@ -87,14 +97,13 @@ function Composer({ value, onChange, onSubmit, pending, onStop, compact, model, 
     </div>}
     <div className="composer-row">
       <div className="composer-tools" ref={menuRef}>
-        <button className="plus-button" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} aria-label="添加文件或选择模型"><Plus size={21} weight="regular" /></button>
-        <input ref={fileRef} className="file-input" type="file" multiple onChange={(event) => { onFiles([...event.target.files]); event.target.value = ""; setOpen(false); }} />
-        {open && <div className="composer-menu">
+        <button className="plus-button" type="button" onClick={toggleMenu} aria-expanded={open} aria-label="添加文件或选择模型"><Plus size={19} weight="regular" /></button>
+        <input ref={fileRef} className="file-input" type="file" multiple onChange={(event) => { onFiles([...event.target.files]); event.target.value = ""; closeMenu(); }} />
+        {menuMounted && <div className={`composer-menu ${open ? "is-open" : "is-closing"}`} onAnimationEnd={() => { if (!open) setMenuMounted(false); }}>
           <button className="upload-row" type="button" onClick={() => fileRef.current?.click()}><Paperclip size={18} /><span><strong>上传文件</strong><small>图片、PDF、Office、文本</small></span></button>
           <div className="menu-divider" />
-          <p>选择模型 · Thinking 已开启</p>
-          {MODELS.map((item) => <button className={`model-row ${model === item.id ? "is-selected" : ""}`} type="button" key={item.id} onClick={() => { onModel(item.id); setOpen(false); }}>
-            <span><strong>{item.label}</strong><small>{item.detail}</small></span>{model === item.id && <Check size={16} weight="bold" />}
+          {MODELS.map((item) => <button className={`model-row ${model === item.id ? "is-selected" : ""}`} type="button" key={item.id} onClick={() => { onModel(item.id); closeMenu(); }}>
+            <strong>{item.label}</strong>{item.detail && <span className="model-detail">{item.detail}</span>}{model === item.id && <Check className="model-check" size={15} weight="bold" />}
           </button>)}
         </div>}
       </div>
@@ -102,7 +111,7 @@ function Composer({ value, onChange, onSubmit, pending, onStop, compact, model, 
         if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (!pending && (value.trim() || attachments.length)) onSubmit(event); }
       }} placeholder="给知识库一个任务" aria-label="输入要在长翼久安知识库中完成的任务" rows={1} />
       {pending ? <button className="send-button stop-button" type="button" onClick={onStop} aria-label="终止工作"><Stop size={17} weight="fill" /></button>
-        : <button className="send-button" type="submit" disabled={!value.trim() && !attachments.length} aria-label="发送"><ArrowUp size={19} weight="bold" /></button>}
+        : <button className="send-button" type="submit" disabled={!value.trim() && !attachments.length} aria-label="发送"><ArrowUp size={17} weight="bold" /></button>}
     </div>
   </form>;
 }
@@ -114,14 +123,27 @@ export function App() {
   const [model, setModel] = useState(() => localStorage.getItem("cyj-agent-model") || "auto");
   const [attachments, setAttachments] = useState([]);
   const [sessionId] = useState(() => localStorage.getItem("cyj-agent-session") || newId());
-  const bottomRef = useRef(null);
-  const composerInputRef = useRef(null);
+  const activeQuestionRef = useRef(null);
   const requestController = useRef(null);
+  const viewTransitionRef = useRef(null);
+  const [activeQuestionId, setActiveQuestionId] = useState(null);
   const hasConversation = messages.length > 0;
 
   useEffect(() => { localStorage.setItem("cyj-agent-session", sessionId); }, [sessionId]);
   useEffect(() => { localStorage.setItem("cyj-agent-model", model); }, [model]);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: pending ? "smooth" : "auto", block: "end" }); }, [messages, pending]);
+  useLayoutEffect(() => {
+    if (!activeQuestionId || !activeQuestionRef.current) return;
+    let frame;
+    let cancelled = false;
+    const anchor = () => {
+      if (cancelled) return;
+      frame = requestAnimationFrame(() => activeQuestionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    };
+    const transition = viewTransitionRef.current;
+    if (transition) transition.finished.then(anchor, anchor);
+    else anchor();
+    return () => { cancelled = true; if (frame) cancelAnimationFrame(frame); };
+  }, [activeQuestionId]);
 
   async function addFiles(files) {
     const accepted = files.slice(0, Math.max(0, 6 - attachments.length));
@@ -141,7 +163,6 @@ export function App() {
   }
 
   function stop() { requestController.current?.abort(); }
-  function followUp() { composerInputRef.current?.focus({ preventScroll: false }); composerInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }
 
   async function submit(event) {
     event.preventDefault();
@@ -149,11 +170,20 @@ export function App() {
     const readyAttachments = attachments.filter((item) => !item.pending && item.artifactId);
     if ((!text && !readyAttachments.length) || pending || attachments.some((item) => item.pending)) return;
     const answerId = newId();
+    const questionId = newId();
     const controller = new AbortController();
     requestController.current = controller;
-    setInput(""); setAttachments([]); setPending(true);
     const displayText = text || "请阅读并整理这些文件";
-    setMessages((current) => [...current, { id: newId(), role: "user", text: displayText }, { id: answerId, role: "assistant", text: "", artifacts: [], pending: true, status: { phase: "thinking", label: "正在思考" } }]);
+    const commitTurn = () => flushSync(() => {
+      setInput(""); setAttachments([]); setPending(true);
+      setMessages((current) => [...current, { id: questionId, role: "user", text: displayText }, { id: answerId, role: "assistant", text: "", artifacts: [], pending: true, status: { phase: "thinking", label: "正在思考" } }]);
+      setActiveQuestionId(questionId);
+    });
+    if (!hasConversation && document.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const transition = document.startViewTransition(commitTurn);
+      viewTransitionRef.current = transition;
+      transition.finished.finally(() => { if (viewTransitionRef.current === transition) viewTransitionRef.current = null; });
+    } else commitTurn();
     const updateAnswer = (updater) => setMessages((current) => current.map((message) => message.id === answerId ? updater(message) : message));
     try {
       const response = await fetch(`${API_ROOT}/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ sessionId, message: displayText, model, attachments: readyAttachments.map(({ artifactId, name, mimeType }) => ({ artifactId, name, mimeType })) }) });
@@ -179,9 +209,9 @@ export function App() {
     } finally { requestController.current = null; setPending(false); updateAnswer((answer) => ({ ...answer, pending: false })); }
   }
 
-  const composerProps = { value: input, onChange: setInput, onSubmit: submit, pending, onStop: stop, model, onModel: setModel, attachments, onFiles: addFiles, onRemoveAttachment: (id) => setAttachments((current) => current.filter((item) => item.localId !== id)), inputRef: composerInputRef };
+  const composerProps = { value: input, onChange: setInput, onSubmit: submit, pending, onStop: stop, model, onModel: setModel, attachments, onFiles: addFiles, onRemoveAttachment: (id) => setAttachments((current) => current.filter((item) => item.localId !== id)) };
   return <main className={hasConversation ? "conversation-shell" : "empty-shell"}>
     {!hasConversation ? <section className="empty-state"><h1>在长翼久安知识库中做些什么？</h1><Composer {...composerProps} /></section>
-      : <><section className="conversation" aria-label="知识库问答">{messages.map((message) => <Message key={message.id} message={message} onFollowUp={followUp} />)}<div ref={bottomRef} /></section><div className="composer-dock"><Composer {...composerProps} compact /></div></>}
+      : <><section className="conversation" aria-label="知识库问答">{messages.map((message) => <Message key={message.id} message={message} active={message.id === activeQuestionId} questionRef={activeQuestionRef} />)}</section><div className="composer-dock"><Composer {...composerProps} compact /></div></>}
   </main>;
 }

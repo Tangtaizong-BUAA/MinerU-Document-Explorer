@@ -9,16 +9,19 @@ References: `Prototype.png`, `codex-clipboard-55f8f096-3c15-44ee-b7d9-4e1b74de0e
 - User turns retain a rounded bubble; Agent output is unboxed and reads directly on the page.
 - Internal command counts are replaced with human-readable knowledge-work status.
 - Output streams progressively and generated resources appear as downloadable file cards.
-- Upload, Auto/Fable 5/qwen3.8max/qwen3.7-flash selection, stop, and follow-up remain available without adding permanent chrome.
+- Upload, Auto/Fable 5/qwen3.8max/qwen3.7-flash selection, and stop remain available without adding permanent chrome.
+- Each submitted question glides to the top of the reading stage; streaming status changes do not move it or disappear behind the fixed composer.
 
 ## Browser verification
 
 - Desktop dark empty state, centering, single-line heading, and glass composer: passed in the running app.
 - Mobile 390 × 844 empty state and in-viewport action/model menu: passed in the running app.
-- Menu selection updates the active model and closes the menu: passed.
+- Menu selection updates the active model and closes with a measured fade-and-scale animation: passed.
+- Model rows are one line: Auto has no suffix; Fable 5, qwen3.8 max, and qwen3.7-flash use right-aligned 深度推理、更强推理、高速响应 labels: passed.
 - File chooser, upload progress, and removable attachment chip: passed with a synthetic Markdown file in demo mode.
 - Stop transitions the active turn to “已终止本次工作”: passed.
-- Follow-up returns focus to the composer in the same session: passed.
+- Follow-up UI and its permanent chrome are absent: passed.
+- First question at 390 × 844 remained at y=27 px across streaming status updates; a later question remained at y=50.8 px while its status stayed below it and above the dock: passed.
 - DOM accessibility: labelled task textbox, labelled send/stop/menu controls, live status region, semantic article and download link: passed.
 - Light/dark theme, reduced motion, long Markdown, tables, code, and safe-area composer styles are present.
 
@@ -29,13 +32,18 @@ References: `Prototype.png`, `codex-clipboard-55f8f096-3c15-44ee-b7d9-4e1b74de0e
 - Web unit/integration suite: 18/18 passed.
 - Focused project runtime and HTTP MCP suite: 25/25 passed.
 - Production web build and root TypeScript build: passed.
-- Alibaba loopback health endpoint reports live 0.5.2; public unauthenticated access remains protected by Basic Auth.
+- Local browser implementation for 0.5.3 passed visual and interaction QA; production deployment is verified separately after release.
 - Live upload persistence passed with `artifact:cyj:857b92831b6c2f2a795a1e64`.
 - Live “技术细节是什么” query returned 城脉 CT、空地协同、32 线激光雷达、IMU+GNSS、SLAM、五拼镜头与毫米级三维重建 rather than knowledge-system architecture.
-- Fable 5 completed a live knowledge answer through the production `qwen3.7-max` compatibility route. The requested `qwen3.8-max-preview` requires a Token Plan endpoint/key that is not currently configured.
+- Fable 5 carries the explicit public model identity `fable 5`; its menu no longer exposes an underlying qwen route.
+
+## Visual comparison
+
+- Combined reference/implementation comparison: `/tmp/cyj-0.5.3-menu-comparison.png`.
+- The 0.5.3 implementation intentionally tightens the menu and composer relative to the supplied screenshot, removes the Thinking/model-routing subcopy, and preserves the same dark glass hierarchy.
 
 ## Known boundary
 
-- Version 0.5.2 accepts up to 8 MB per uploaded file. Larger source documents require the subsequent resumable/chunked transfer path; the UI and server fail closed instead of pretending they were persisted.
+- Version 0.5.3 accepts up to 8 MB per uploaded file. Larger source documents require the subsequent resumable/chunked transfer path; the UI and server fail closed instead of pretending they were persisted.
 
-final result: passed, with the documented Token Plan model and 8 MB upload boundaries
+final result: passed

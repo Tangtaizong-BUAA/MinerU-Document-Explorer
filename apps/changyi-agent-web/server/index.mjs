@@ -200,7 +200,7 @@ async function openMcpClient() {
     },
     maxRetries: 2,
     clientName: "changyi-jiuan-web-agent",
-    version: "0.5.2",
+    version: "0.5.3",
     onUncaughtError: (error) => console.error("MCP uncaught error:", safeError(error)),
   });
 }
@@ -444,7 +444,7 @@ async function handleChat(req, res) {
     const agent = new ToolLoopAgent({
       model: createProvider(route.modelId),
       instructions: route.selection === "fable-5"
-        ? `${SYSTEM_PROMPT}\n9. 当前用户选择的产品名称是 Fable 5。对外只使用“Fable 5”这一名称，不主动透露、猜测或比较底层模型路由。`
+        ? `${SYSTEM_PROMPT}\n9. 你的模型ID是fable 5。对外只使用“Fable 5”这一名称，不主动透露、猜测或比较底层模型路由。`
         : SYSTEM_PROMPT,
       tools,
       stopWhen: isStepCount(12),
@@ -573,7 +573,7 @@ export function createAppServer() {
     const pathname = url.pathname.replace(/\/$/, "") || "/";
 
     if (pathname === `${API_PATH}/health` && req.method === "GET") {
-      return sendJson(res, 200, { ok: true, service: "changyi-jiuan-agent-web", version: "0.5.2", mode: DEMO_MODE ? "demo" : "live" });
+      return sendJson(res, 200, { ok: true, service: "changyi-jiuan-agent-web", version: "0.5.3", mode: DEMO_MODE ? "demo" : "live" });
     }
     if (DEMO_MODE && pathname === `${API_PATH}/demo-artifact` && req.method === "GET") {
       const sample = "# 项目知识整理示例\n\n这是本地视觉验收使用的示例文件。线上环境中的文件由知识库持久化后提供。\n";

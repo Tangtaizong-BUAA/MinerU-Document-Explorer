@@ -1,6 +1,6 @@
 # 长翼久安线上 Agent
 
-当前版本：`0.5.2`
+当前版本：`0.5.3`
 
 面向团队成员的极简网页 Agent。浏览器只负责流式交互；Node 后端使用
 Vercel AI SDK `ToolLoopAgent` 调用经过白名单限制的长翼久安 MCP 工具。
@@ -14,7 +14,8 @@ Markdown、TXT、CSV、JSON、YAML 和代码文件。Office 二进制与 base64 
 Fable 5 与 qwen3.8max 优先走 Token Plan 的 `qwen3.8-max-preview`，
 Auto 与 qwen3.7-flash 走快速模型，
 四种选择均启用 thinking。输入栏左侧统一提供模型切换与文件上传；单个文件
-当前上限为 8MB。进行中的请求可终止，完成后可在同一会话继续跟进。
+当前上限为 8MB。进行中的请求可终止；新问题会平滑置顶，后续流式状态更新
+不会推动页面跳动。Fable 5 对外仅使用 `Fable 5` 模型身份，不暴露底层路由。
 
 标准 DashScope Base URL 不提供 `qwen3.8-max-preview`。生产环境可通过
 `CYJ_AGENT_MODEL_MAX=qwen3.7-max` 保持 Fable/增强模型按钮可用；接入 Token
