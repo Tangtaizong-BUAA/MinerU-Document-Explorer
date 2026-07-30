@@ -436,6 +436,11 @@ describe("ProjectRuntime", () => {
         });
         expect(pdf.searchable).toBe(false);
         expect(pdf.mineru_parse_supported).toBe(true);
+        expect(pdf.raw_resource_uri).toBe(`kb://artifact/${encodeURIComponent(pdf.artifact_id)}/raw`);
+        const raw = await rt.readRawArtifactResource(pdf.raw_resource_uri);
+        expect(raw.mimeType).toBe("application/pdf");
+        expect(Buffer.from(raw.blob, "base64").toString("utf8")).toBe("%PDF-synthetic");
+        await expect(rt.readResource(pdf.resource_uri)).rejects.toThrow("no normalized Markdown");
         const originalKey = process.env.MINERU_API_KEY;
         delete process.env.MINERU_API_KEY;
         resetDocReadingConfig();

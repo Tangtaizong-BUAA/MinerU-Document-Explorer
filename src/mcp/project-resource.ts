@@ -17,6 +17,18 @@ export function registerLightweightProjectResource(
       mimeType: "text/markdown",
     },
     async (uri) => {
+      if (uri.pathname.endsWith("/raw")) {
+        const resource = await runtime.readRawArtifactResource(uri.href, profile === "project-admin" ? "secret" : "internal");
+        return {
+          contents: [{
+            uri: uri.href,
+            name: resource.title,
+            title: resource.title,
+            mimeType: resource.mimeType,
+            blob: resource.blob,
+          }],
+        };
+      }
       const resource = await runtime.readResource(uri.href, profile === "project-admin" ? "secret" : "internal");
       return {
         contents: [{

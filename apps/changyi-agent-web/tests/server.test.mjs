@@ -22,15 +22,15 @@ test("health endpoint is scoped to the agent base path", async () => {
     assert.deepEqual(await response.json(), {
       ok: true,
       service: "changyi-jiuan-agent-web",
-      version: "0.5.0",
+      version: "0.5.1",
       mode: "demo",
     });
   });
 });
 
 test("internal tool and framework names are removed from visible answers", () => {
-  const visible = redactInternalNames("已调用 `kb_brief`，再交给 ToolLoopAgent 与 MS-Agent。");
-  assert.doesNotMatch(visible, /kb_brief|ToolLoopAgent|MS-Agent/);
+  const visible = redactInternalNames("已调用 `kb_brief` 和 create_docx，再交给 ToolLoopAgent 与 MS-Agent。");
+  assert.doesNotMatch(visible, /kb_brief|create_docx|ToolLoopAgent|MS-Agent/);
   assert.match(visible, /知识库流程/);
 });
 

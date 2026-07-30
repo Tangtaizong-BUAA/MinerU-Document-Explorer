@@ -1,7 +1,14 @@
 # 长翼久安线上 Agent
 
+当前版本：`0.5.1`
+
 面向团队成员的极简网页 Agent。浏览器只负责流式交互；Node 后端使用
 Vercel AI SDK `ToolLoopAgent` 调用经过白名单限制的长翼久安 MCP 工具。
+
+产物环境内置确定性文档工厂，可直接生成并持久化 DOCX、PPTX、XLSX、
+Markdown、TXT、CSV、JSON、YAML 和代码文件。Office 二进制与 base64 上传
+全部在服务器工具内部完成，不进入模型上下文。PDF 尚未开放，避免在没有
+中文字体与版式转换验收的情况下提供伪支持。
 
 ## 生产入口
 

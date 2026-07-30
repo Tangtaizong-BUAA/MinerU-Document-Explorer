@@ -113,6 +113,22 @@ describe("Changyi Jiuan HTTP MCP", () => {
     expect(finished.result.structuredContent.promoted_memory_ids).toHaveLength(1);
     const searched = await call("kb_search", { query: "Automatic closeout artifact", top_k: 3 });
     expect(searched.result.content[0]!.text).toContain("Automatic closeout report");
+
+    const binaryWork = await call("kb_start_work", { project_id: "project:cyj:http-persistence", objective: "Verify binary resource download", expected_outputs: ["binary"], acceptance_criteria: ["raw bytes round trip"] });
+    const binary = await call("kb_publish_resource", {
+      work_id: String(binaryWork.result.structuredContent.work_id),
+      resource: { title: "Synthetic binary", filename: "synthetic.pdf", content_type: "application/pdf", encoding: "base64", content: Buffer.from("%PDF-http-test").toString("base64"), kind: "document" },
+    });
+    const rawUri = String(binary.result.structuredContent.raw_resource_uri);
+    const read = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": session },
+      body: JSON.stringify({ jsonrpc: "2.0", id: requestId++, method: "resources/read", params: { uri: rawUri } }),
+    });
+    expect(read.status).toBe(200);
+    const readBody = await read.json() as { result: { contents: Array<{ mimeType?: string; blob?: string }> } };
+    expect(readBody.result.contents[0]!.mimeType).toBe("application/pdf");
+    expect(Buffer.from(readBody.result.contents[0]!.blob!, "base64").toString("utf8")).toBe("%PDF-http-test");
   });
 
   test("keeps legacy main and section tools proposal-only over HTTP", async () => {

@@ -89,6 +89,7 @@ export type PublishedResource = {
   sha256: string;
   size_bytes: number;
   resource_uri: string;
+  raw_resource_uri: string;
   searchable: boolean;
   mineru_parse_supported: boolean;
 };
@@ -524,6 +525,7 @@ export class ProjectRuntime {
       return {
         artifact_id: artifactId, work_id: work.id, status: existing.record.status, sha256, size_bytes: bytes.length,
         resource_uri: `kb://artifact/${encodeURIComponent(artifactId)}/document`, searchable: typeof existing.record.normalized_markdown_path === "string",
+        raw_resource_uri: `kb://artifact/${encodeURIComponent(artifactId)}/raw`,
         mineru_parse_supported: MINERU_MIME_TYPES.has(input.content_type),
       };
     }
@@ -565,6 +567,7 @@ export class ProjectRuntime {
     return {
       artifact_id: artifactId, work_id: work.id, status, sha256, size_bytes: bytes.length,
       resource_uri: `kb://artifact/${encodeURIComponent(artifactId)}/document`, searchable: status === "parsed",
+      raw_resource_uri: `kb://artifact/${encodeURIComponent(artifactId)}/raw`,
       mineru_parse_supported: MINERU_MIME_TYPES.has(input.content_type),
     };
   }
@@ -1472,6 +1475,25 @@ export class ProjectRuntime {
     if (!item) throw new Error(`Knowledge resource not found: ${uriOrId}`);
     if (!confidentialityAllowed(item.record, maximumConfidentiality)) throw new Error("Resource is outside this profile's confidentiality scope");
     return { uri: uriOrId.startsWith("kb://") ? uriOrId : `kb://record/${encodeURIComponent(item.record.id)}`, title: item.record.title, text: renderRecord(item.record, item.body) };
+  }
+
+  async readRawArtifactResource(uri: string, maximumConfidentiality: Confidentiality = "internal"): Promise<{ uri: string; title: string; mimeType: string; blob: string }> {
+    const parts = uri.startsWith("kb://") ? uri.split("/") : [];
+    if (parts.length < 5 || parts[2] !== "artifact" || parts[4] !== "raw") throw new Error(`Raw artifact resource not found: ${uri}`);
+    const artifactId = decodeURIComponent(parts[3] ?? "");
+    const artifact = await this.get(artifactId);
+    if (!artifact || artifact.record.type !== "artifact") throw new Error(`Artifact resource not found: ${uri}`);
+    if (!confidentialityAllowed(artifact.record, maximumConfidentiality)) throw new Error("Resource is outside this profile's confidentiality scope");
+    const managedPath = artifact.record.managed_relative_path;
+    if (typeof managedPath !== "string") throw new Error(`Artifact has no managed original file: ${artifactId}`);
+    const bytes = await readFile(this.managedResourcePath(managedPath));
+    if (artifact.record.sha256 && digestBytes(bytes) !== artifact.record.sha256) throw new Error(`Artifact original file failed integrity verification: ${artifactId}`);
+    return {
+      uri,
+      title: artifact.record.title,
+      mimeType: typeof artifact.record.mime_type === "string" ? artifact.record.mime_type : "application/octet-stream",
+      blob: bytes.toString("base64"),
+    };
   }
 
   async health(): Promise<Record<string, unknown>> {
