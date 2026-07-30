@@ -336,9 +336,9 @@ export class ProjectRuntime {
         content = await readFile(join(this.root, item.record.normalized_markdown_path), "utf8").catch(() => content);
       }
       if (!content.trim()) continue;
-      const remaining = 8_000 - evidenceChars;
+      const remaining = 3_000 - evidenceChars;
       if (remaining <= 0) break;
-      const excerpt = content.slice(0, Math.min(remaining, 4_000));
+      const excerpt = content.slice(0, Math.min(remaining, 2_000));
       evidenceParts.push(`## Evidence ${ref}\nTitle: ${item.record.title}\nType: ${item.record.type}\n\n${excerpt}`);
       evidenceChars += excerpt.length;
     }
@@ -370,7 +370,7 @@ export class ProjectRuntime {
         const heading = headings[index]!;
         const next = headings.slice(index + 1).find(candidate => candidate.level <= heading.level);
         const content = lines.slice(heading.index + 1, next?.index ?? lines.length).join("\n").trim();
-        if (!content || content.length > 4_000) continue;
+        if (!content || content.length > 2_500) continue;
         const title = heading.title.toLowerCase();
         let score = routingText.includes(title) ? 20 : 0;
         for (let offset = 0; offset + 1 < title.length; offset += 1) if (routingText.includes(title.slice(offset, offset + 2))) score += 2;
@@ -381,11 +381,11 @@ export class ProjectRuntime {
     }
     let documentChars = 0;
     for (const candidate of headingCandidates.sort((a, b) => b.score - a.score).slice(0, 4)) {
-      if (documentChars + candidate.text.length > 7_000) continue;
+      if (documentChars + candidate.text.length > 3_000) continue;
       documentParts.push(candidate.text);
       documentChars += candidate.text.length;
     }
-    const hydratedContext = [input.text_context, ...evidenceParts, ...documentParts].join("\n\n").slice(0, 18_000);
+    const hydratedContext = [input.text_context.slice(0, 1_500), ...evidenceParts, ...documentParts].join("\n\n").slice(0, 6_000);
     const packetId = `packet:cyj:${digest(input.idempotency_key).slice(0, 24)}`;
     const packet: ChangePacket = {
       schema: "cyj-change-packet/v1", packet_id: packetId, project_id: input.project_id, idempotency_key: input.idempotency_key,
@@ -393,7 +393,7 @@ export class ProjectRuntime {
       base_revisions: { knowledge_revision: pointer?.knowledge_revision ?? "legacy", topology_revision: pointer?.topology_revision ?? "legacy", index_revision: pointer?.index_revision ?? "unbuilt" },
       evidence_refs: evidenceRefs, candidate_section_refs: candidateSectionRefs,
       open_conflict_refs: openConflicts, text_context: hydratedContext, media: (input.media ?? []).slice(0, 12),
-      budget: { max_tool_calls: 4, max_cumulative_input_tokens: 12000, max_context_tokens_per_step: 6000, max_cumulative_output_tokens: 3000, max_sections: 6, max_evidence_units: 40, max_multimodal_assets: 12, max_cost_usd: Number(process.env.CYJ_MAINTENANCE_MAX_COST_USD ?? "0.50") },
+      budget: { max_tool_calls: 2, max_cumulative_input_tokens: 12000, max_context_tokens_per_step: 6000, max_cumulative_output_tokens: 3000, max_sections: 6, max_evidence_units: 40, max_multimodal_assets: 12, max_cost_usd: Number(process.env.CYJ_MAINTENANCE_MAX_COST_USD ?? "0.50") },
       egress_policy: { maximum_confidentiality: "internal", provider: "alibaba_model_studio", region: process.env.CYJ_DASHSCOPE_REGION ?? "cn-beijing" },
       ...(input.locked_user_resolution_ref ? { locked_user_resolution_ref: input.locked_user_resolution_ref } : {}),
     };

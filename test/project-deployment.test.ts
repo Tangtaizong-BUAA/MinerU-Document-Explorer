@@ -38,7 +38,7 @@ describe("Changyi Jiuan client deployment templates", () => {
     expect(service).not.toContain("mem_limit: 1536m");
     expect(agentConfig).toContain("enable_thinking: false");
     expect(agentConfig).toContain("max_tokens: 1200");
-    expect(agentConfig).toContain("max_chat_round: 4");
+    expect(agentConfig).toContain("max_chat_round: 3");
   });
 
   test("Alibaba standby runs the same lightweight runtime in read-only profile", async () => {
