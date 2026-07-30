@@ -21,6 +21,7 @@ describe("Changyi Jiuan client deployment templates", () => {
 
     expect(dockerfile).toContain("--no-deps --index-url \"$PIP_INDEX_URL\" ms-agent==1.6.0");
     expect(dockerfile).toContain("apt-get install -y --no-install-recommends build-essential");
+    expect(dockerfile).toContain("build-essential libssl3");
     expect(dockerfile).toContain("apt-get purge -y --auto-remove build-essential");
     expect(dockerfile).toContain("ARG APT_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian");
     expect(requirements).not.toMatch(/^ms-agent(?:==|\s)/m);

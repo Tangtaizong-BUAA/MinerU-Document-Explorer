@@ -27,7 +27,7 @@ COPY package.json package-lock.json ./
 # toolchain in the same layer so it is absent from the runtime image.
 RUN sed -i "s#http://deb.debian.org/debian#$APT_MIRROR#g" /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
-    && apt-get install -y --no-install-recommends build-essential \
+    && apt-get install -y --no-install-recommends build-essential libssl3 \
     && npm ci --omit=dev --no-audit --no-fund \
     && apt-get purge -y --auto-remove build-essential \
     && rm -rf /var/lib/apt/lists/* /root/.cache/node-gyp

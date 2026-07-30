@@ -105,7 +105,7 @@ async def _live_plan(packet: dict[str, Any], options: dict[str, Any]) -> dict[st
         from ms_agent.config import Config
         from ms_agent.llm.utils import Message
     except ImportError as exc:
-        raise RuntimeError("ms-agent==1.6.0 is not installed") from exc
+        raise RuntimeError(f"ms-agent runtime import failed: {exc}") from exc
 
     config_path = Path(__file__).with_name("cyj_maintenance_agent.yaml")
     if str(config_path.parent) not in sys.path:
