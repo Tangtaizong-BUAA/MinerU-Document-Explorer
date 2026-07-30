@@ -2,6 +2,16 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { streamSimple, Type } from "@mariozechner/pi-ai";
 import { asSchema } from "@ai-sdk/provider-utils";
 
+const LENIENT_DOCUMENT_TOOLS = new Set(["create_pdf", "create_docx", "create_pptx", "create_xlsx"]);
+
+function allowLayoutHints(value) {
+  if (Array.isArray(value)) return value.map(allowLayoutHints);
+  if (!value || typeof value !== "object") return value;
+  const output = Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, allowLayoutHints(nested)]));
+  if (output.type === "object" || output.properties) output.additionalProperties = true;
+  return output;
+}
+
 function jsonText(value) {
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
@@ -23,7 +33,8 @@ function resultContent(output) {
 
 async function adaptAiTool(name, aiTool) {
   const schema = asSchema(aiTool.inputSchema);
-  const jsonSchema = await schema.jsonSchema;
+  const sourceSchema = await schema.jsonSchema;
+  const jsonSchema = LENIENT_DOCUMENT_TOOLS.has(name) ? allowLayoutHints(sourceSchema) : sourceSchema;
   return {
     name,
     label: aiTool.title || name,

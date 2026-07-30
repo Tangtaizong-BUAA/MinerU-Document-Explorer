@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fauxAssistantMessage, registerFauxProvider } from "@mariozechner/pi-ai";
-import { createPiModel, createSessionAttachmentTools, runPiAgent } from "../server/pi-harness.mjs";
+import { createArtifactTools } from "../server/artifact-factory.mjs";
+import { adaptAiTools, createPiModel, createSessionAttachmentTools, runPiAgent } from "../server/pi-harness.mjs";
 
 test("DashScope compatibility keeps the system prompt in the supported system role", () => {
   assert.equal(createPiModel("qwen3.7-flash").compat.supportsDeveloperRole, false);
+});
+
+test("document tools tolerate harmless extra layout hints from the model", async () => {
+  const adapted = await adaptAiTools(createArtifactTools({ callTool: async () => ({}) }));
+  const pdf = adapted.find((tool) => tool.name === "create_pdf");
+  assert.equal(pdf.parameters.additionalProperties, true);
+  assert.equal(pdf.parameters.properties.sections.items.additionalProperties, true);
 });
 
 test("Pi harness streams answer deltas and retains session messages", async () => {

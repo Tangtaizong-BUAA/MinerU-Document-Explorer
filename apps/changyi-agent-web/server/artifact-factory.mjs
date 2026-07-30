@@ -32,7 +32,7 @@ const confidentialitySchema = z.enum(["public", "internal", "restricted"]).defau
 const tableSchema = z.object({
   headers: z.array(z.string().max(160)).min(1).max(12),
   rows: z.array(z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])).max(12)).max(120),
-});
+}).passthrough();
 
 const docxSchema = z.object({
   work_id: workIdSchema,
@@ -48,8 +48,8 @@ const docxSchema = z.object({
     paragraphs: z.array(z.string().max(5000)).max(30).default([]),
     bullets: z.array(z.string().max(1000)).max(30).default([]),
     tables: z.array(tableSchema).max(5).default([]),
-  })).min(1).max(40),
-});
+  }).passthrough()).min(1).max(40),
+}).passthrough();
 
 const pptxSchema = z.object({
   work_id: workIdSchema,
@@ -65,8 +65,8 @@ const pptxSchema = z.object({
     body: z.string().max(1800).optional(),
     bullets: z.array(z.string().max(360)).max(9).default([]),
     footnote: z.string().max(260).optional(),
-  })).min(1).max(30),
-});
+  }).passthrough()).min(1).max(30),
+}).passthrough();
 
 const cellSchema = z.union([z.string().max(5000), z.number(), z.boolean(), z.null()]);
 const xlsxSchema = z.object({
@@ -82,10 +82,10 @@ const xlsxSchema = z.object({
       header: z.string().min(1).max(120),
       key: z.string().min(1).max(80),
       width: z.number().min(6).max(60).optional(),
-    })).min(1).max(40),
+    }).passthrough()).min(1).max(40),
     rows: z.array(z.record(z.string(), cellSchema)).max(1000),
-  })).min(1).max(12),
-});
+  }).passthrough()).min(1).max(12),
+}).passthrough();
 
 const textSchema = z.object({
   work_id: workIdSchema,
@@ -96,7 +96,7 @@ const textSchema = z.object({
   kind: z.enum(["note", "report", "deliverable", "dataset", "code", "document"]).default("deliverable"),
   confidentiality: confidentialitySchema,
   source_refs: sourceRefsSchema,
-});
+}).passthrough();
 
 function safeFilename(filename, extension) {
   const cleaned = String(filename)
