@@ -1,30 +1,37 @@
 # 长翼久安知识库mcp工具
 
-这个文件夹可直接分享给团队成员。它包含 MCP 声明、Agent Skill、安装脚本和可交给 Codex 的安装提示词。
+这个文件夹可直接分享给团队成员。它是纯客户端接入包，只包含 MCP 声明、Agent Skill、安装脚本和可交给 Agent 的安装提示词。
 
-不包含访问令牌、项目原件或任何本地数据库。
+不包含服务端源码、访问令牌、项目原件、任何本地数据库、私钥或云 API Key。
 
 ## 团队成员安装
 
 1. 从项目管理员处通过安全渠道取得团队 MCP 访问令牌；不要把令牌写进聊天、Git、共享文件夹或截图。
-2. 将本文件夹复制到本机任意位置。
-3. 在终端运行：
+2. 将本文件夹复制到本机任意位置。你也可以直接把 [PROMPT-FOR-AGENT.md](PROMPT-FOR-AGENT.md) 和本文件夹交给当前 Agent。
+3. 根据客户端运行：
 
 ```bash
 cd /path/to/changyi-jiuan-knowledge
-bash scripts/install-mcp.sh
+bash scripts/install.sh codex
+bash scripts/install.sh qoder
+bash scripts/install.sh hermes
 ```
 
-脚本会静默要求输入令牌，将内置 Skill 以文件级增量安装到 `${CODEX_HOME:-~/.codex}/skills/changyi-jiuan-knowledge-operations`，把 `changyi_jiuan_knowledge` 注册为全局 Codex MCP，并设置当前 macOS 登录会话所需的环境变量。未变化的 Skill 文件不会重写，manifest 最后落盘。
+只运行与你使用的客户端对应的一行。脚本会静默要求输入令牌，将内置 Skill 增量安装到客户端的用户级 Skill 目录，并把 `changyi_jiuan_knowledge` 注册为远程 HTTPS MCP。未变化的 Skill 文件不会重写。
 
-4. 重启 Codex App，打开一个新任务。Agent 会先调用 `kb_sync_skill` 对比服务端和本地版本；若有更新，只回传并替换变化的文件，逐文件校验 SHA-256，新版本从下一任务生效。随后调用 `kb_brief` 完整读取主文件和分文件导航；按需用 `kb_graph_context` 读取分文件及其 artifacts，并对具体细节主动执行 `kb_search` RAG。在项目工作中，它会用 `kb_publish_resource` 自动归档产物、用 `kb_capture_context` 提炼对话中的长期信息；服务器维护 Worker 异步维护主文件、分文件和拓扑。
+- Codex 使用 `bearer_token_env_var`，令牌不会进入 Codex 配置文件。
+- Qoder 的静态 Header 鉴权按官方远程 HTTP MCP 格式写入本机用户配置，文件权限设为 `0600`；不会写回安装包。
+- Hermes 将令牌写入本机 `~/.hermes/.env`（`0600`），配置中只保留环境变量引用。
 
-也可以直接把 [PROMPT-FOR-CODEX.md](PROMPT-FOR-CODEX.md) 连同本文件夹交给 Codex。
+4. 重启或重载客户端，打开一个新任务。Agent 会先调用 `kb_sync_skill` 对比服务端和本地版本；若有更新，只回传并替换变化的文件，逐文件校验 SHA-256，新版本从下一任务生效。随后调用 `kb_brief` 完整读取主文件和分文件导航；按需用 `kb_graph_context` 读取分文件及其 artifacts，并对具体细节主动执行 `kb_search` RAG。在项目工作中，它会用 `kb_publish_resource` 自动归档产物、用 `kb_capture_context` 提炼对话中的长期信息；服务器维护 Worker 异步维护主文件、分文件和拓扑。
+
+Codex 用户也可以继续使用 [PROMPT-FOR-CODEX.md](PROMPT-FOR-CODEX.md)。
 
 ## 访问与安全
 
 - 服务地址固定为 `https://argonai.cn/cyj/mcp`，使用 Bearer Token 验证。
-- 普通团队令牌只对应 `project-contribute`，不含摄取运维、直接文档修改或冲突解决能力。负责人和指定负责人另领独立 resolver token。
+- 每位普通团队成员只收到一个个人 `project-contribute` Token，不含摄取运维、直接文档修改或冲突解决能力。负责人和指定负责人另领独立 resolver Token。
+- 不建议多人共用一个 Token：逐人 Token 不增加成员安装步骤，但可以单独撤销并保留主体级审计。服务端只保存 Token 的 SHA-256，不保存可还原明文。
 - 插件不会把令牌写入此文件夹或 Git。`install-mcp.sh` 仅把令牌注入当前 macOS 登录会话；重新登录 macOS 后需再运行一次脚本。
 - Agent 不得把令牌放进 MCP 调用、知识库记录、提交信息或输出内容。
 
@@ -51,3 +58,5 @@ bash scripts/install-mcp.sh
 codex mcp remove changyi_jiuan_knowledge
 launchctl unsetenv CYJ_MCP_BEARER_TOKEN
 ```
+
+Qoder 可从 MCP 设置删除 `changyi_jiuan_knowledge`；Hermes 使用 `hermes mcp remove changyi_jiuan_knowledge`。删除本机 Skill 目录不会删除服务器数据。
