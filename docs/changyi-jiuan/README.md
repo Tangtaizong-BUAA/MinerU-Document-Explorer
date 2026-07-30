@@ -1,7 +1,7 @@
 # 长翼久安知识库定向改造规划
 
 > 文书状态：0.5.0 Implemented / Alibaba live gate verified
-> 本地构建版本：0.5.0；当前线上部署仍为 0.4.0，等待受控生产发布
+> 当前生产版本：0.5.0；家庭主节点提供 `project-contribute` 与独立 Maintainer，阿里 8794 提供 `project-read` 回退
 > 上游基线：`opendatalab/MinerU-Document-Explorer`
 > 基线提交：`a7e9c6cc25b7edbf4ebd35aea8e270523a8a3e40`
 > 本地工作分支：`feature/changyi-jiuan-kb`

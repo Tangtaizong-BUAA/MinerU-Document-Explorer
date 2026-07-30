@@ -1,8 +1,8 @@
 # 12 三客户端部署
 
-> 0.5.0 迁移说明：本文首先记录当前 0.4 客户端能力。0.5 将外部客户端的 canonical 文档直接写入收口到独立维护 Worker；迁移完成前不得把现有 `kb_update_main/kb_upsert_section` 描述为已经移除。目标边界见 [11-v0.5-product-technology-stack.md](11-v0.5-product-technology-stack.md)。
+> 0.5.0 已于 2026-07-30 发布：外部客户端只提交 Artifact、精炼上下文、工作状态与冲突答案；主文件、分文件和拓扑的 canonical 提交收口到独立维护 Worker。legacy `kb_update_main/kb_upsert_section` 仅保留 proposal-only 迁移语义。目标边界见 [11-v0.5-product-technology-stack.md](11-v0.5-product-technology-stack.md)。
 >
-> 0.5 发布门禁：团队公网主节点必须从当前 `project-admin` 切为 `project-contribute`；`project-resolve` 使用独立 capability；摄取/重建只在家庭 loopback 的 `project-ops`；阿里回退保持 `project-read`。已载入 0.4 Skill 的在途任务通过 proposal-only legacy shim 收尾，旧工具名不得直接写 canonical。机器可读矩阵见 [specs/mcp-surface.v0.5.yaml](specs/mcp-surface.v0.5.yaml)。
+> 当前工具面：团队公网主节点为 `project-contribute`；`project-resolve` 使用独立 capability；摄取/重建只在家庭 loopback 的 `project-ops`；阿里回退为 `project-read`。已载入 0.4 Skill 的在途任务通过 proposal-only legacy shim 收尾，旧工具名不得直接写 canonical。机器可读矩阵见 [specs/mcp-surface.v0.5.yaml](specs/mcp-surface.v0.5.yaml)。
 
 三个客户端都使用同一份标准 MCP stdio 配置，差异只在各客户端的 MCP 配置入口。模板位于 `deploy/mcp/`；将 `__ABSOLUTE_KNOWLEDGE_DATA_ROOT__` 替换为真实数据根目录，禁止把该目录或 API Key 提交到仓库。
 

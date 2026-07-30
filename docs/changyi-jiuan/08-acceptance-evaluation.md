@@ -1,6 +1,6 @@
 # 08 验收与评测
 
-> 0.5.0 修订说明：本文件新增多模态分桶、Maintenance Harness、冲突保护、immutable revision pointer 和 Worker 隔离门禁。0.5 设计目标没有通过这些门禁前，运行版本仍为 0.4.0。
+> 0.5.0 修订说明：本文件新增多模态分桶、Maintenance Harness、冲突保护、immutable revision pointer 和 Worker 隔离门禁。该发布前约束已执行；0.5.0 于 2026-07-30 在专项回归、阿里 live gate、家庭影子路径和阿里只读回退通过后发布。
 
 ## 1. 验收原则
 
