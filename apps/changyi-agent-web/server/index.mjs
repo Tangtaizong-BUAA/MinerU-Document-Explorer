@@ -190,12 +190,12 @@ function requiredEnv(name) {
 }
 
 async function openMcpClient() {
-  const token = requiredEnv("CYJ_MCP_BEARER_TOKEN");
+  const token = process.env.CYJ_MCP_BEARER_TOKEN;
   return createMCPClient({
     transport: {
       type: "http",
       url: MCP_URL,
-      headers: { Authorization: `Bearer ${token}` },
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
       redirect: "follow",
     },
     maxRetries: 2,
@@ -223,6 +223,56 @@ export function selectedModel(value) {
 function safeError(error) {
   if (error instanceof Error) return error.message.replace(/sk-[a-zA-Z0-9_-]+/g, "[redacted]").slice(0, 500);
   return String(error).slice(0, 500);
+}
+
+function toolText(result) {
+  if (!result || typeof result !== "object") return "";
+  const content = Array.isArray(result.content) ? result.content : [];
+  return content.filter((part) => part?.type === "text" && typeof part.text === "string").map((part) => part.text).join("\n");
+}
+
+function toolStructuredOutput(result, seen = new Set()) {
+  if (result == null || typeof result !== "object" || seen.has(result)) return undefined;
+  seen.add(result);
+  for (const key of ["structuredContent", "structured_content"]) {
+    const value = result[key];
+    if (value && typeof value === "object") return value;
+    if (typeof value === "string" && /^[\s\[{]/.test(value)) {
+      try { return JSON.parse(value); } catch { /* continue */ }
+    }
+  }
+  for (const value of Object.values(result)) {
+    const nested = toolStructuredOutput(value, seen);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function findToolField(value, fields, seen = new Set()) {
+  if (value == null || typeof value !== "object" || seen.has(value)) return undefined;
+  seen.add(value);
+  for (const field of fields) {
+    if (typeof value[field] === "string") return value[field];
+  }
+  for (const nested of Object.values(value)) {
+    const found = findToolField(nested, fields, seen);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+export function toolArtifactId(result) {
+  const direct = findToolField(result, ["artifact_id", "artifactId"]);
+  if (typeof direct === "string" && direct.startsWith("artifact:")) return direct;
+  const matched = toolText(result).match(/\bPublished\s+(artifact:[A-Za-z0-9:_-]+)/i);
+  return matched?.[1];
+}
+
+function toolWorkId(result) {
+  const direct = findToolField(result, ["work_id", "workId"]);
+  if (typeof direct === "string" && direct.startsWith("work_item:")) return direct;
+  const matched = toolText(result).match(/\bStarted\s+(work_item:[A-Za-z0-9:_-]+)/i);
+  return matched?.[1];
 }
 
 function publicError(error) {
@@ -390,12 +440,15 @@ async function handleUpload(req, res) {
     if (DEMO_MODE) return sendJson(res, 200, { attachment: { artifactId: `artifact:demo:${Date.now()}`, name: filename, mimeType, size: bytes.length } });
     client = await openMcpClient();
     const started = await client.callTool({ name: "kb_start_work", arguments: { project_id: PROJECT_ID, objective: `接收并持久化用户上传文件：${filename}`, expected_outputs: [filename], acceptance_criteria: ["文件原件已进入项目知识库并保留来源"] } });
-    const workId = started.structuredContent?.work_id;
+    if (started.isError) throw new Error(toolText(started) || "知识库未能建立文件接收任务");
+    const workId = toolWorkId(started);
     if (!workId) throw new Error("知识库未能建立文件接收任务");
     const published = await client.callTool({ name: "kb_publish_resource", arguments: { work_id: workId, resource: { title: filename, filename, content_type: mimeType, encoding: "base64", content: bytes.toString("base64"), kind: mimeType.startsWith("image/") ? "image" : "document", source_refs: [`web-upload:${String(req.headers["x-session-id"] || "anonymous")}`], confidentiality: "internal" } }, options: { timeout: 120_000 } });
-    const artifactId = published.structuredContent?.artifact_id;
+    if (published.isError) throw new Error(toolText(published) || "知识库未能保存文件");
+    const artifactId = toolArtifactId(published);
     if (!artifactId) throw new Error("知识库未返回文件标识");
-    await client.callTool({ name: "kb_finish_work", arguments: { work_id: workId, outcome: "completed", summary: `用户上传文件 ${filename} 已持久化`, result_hash: `upload-${published.structuredContent.sha256 || artifactId}`, artifacts: [artifactId], evidence_refs: [artifactId] } });
+    const publishedOutput = toolStructuredOutput(published);
+    await client.callTool({ name: "kb_finish_work", arguments: { work_id: workId, outcome: "completed", summary: `用户上传文件 ${filename} 已持久化`, result_hash: `upload-${publishedOutput?.sha256 || artifactId}`, artifacts: [artifactId], evidence_refs: [artifactId] } });
     return sendJson(res, 200, { attachment: { artifactId, name: filename, mimeType, size: bytes.length } });
   } catch (error) {
     return sendJson(res, error.status || 400, { error: safeError(error) });

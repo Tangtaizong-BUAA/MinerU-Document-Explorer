@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 process.env.CYJ_AGENT_DEMO_MODE = "1";
-const { createAppServer, deepFindArtifacts, redactInternalNames, selectedModel, uploadMimeType } = await import("../server/index.mjs");
+const { createAppServer, deepFindArtifacts, redactInternalNames, selectedModel, toolArtifactId, uploadMimeType } = await import("../server/index.mjs");
 
 async function withServer(run) {
   const server = createAppServer();
@@ -64,6 +64,12 @@ test("published artifact card keeps the requested title and filename", () => {
   );
   assert.equal(artifact.title, "线上 Agent 部署验收摘要");
   assert.equal(artifact.filename, "线上Agent部署验收摘要.md");
+});
+
+test("upload accepts structured and text-only MCP publish responses", () => {
+  assert.equal(toolArtifactId({ structuredContent: { artifact_id: "artifact:cyj:structured" } }), "artifact:cyj:structured");
+  assert.equal(toolArtifactId({ output: { structured_content: { artifactId: "artifact:cyj:wrapped" } } }), "artifact:cyj:wrapped");
+  assert.equal(toolArtifactId({ content: [{ type: "text", text: "Published artifact:cyj:text-only; searchable=false." }] }), "artifact:cyj:text-only");
 });
 
 test("chat endpoint emits knowledge-work statuses and streamed text", async () => {

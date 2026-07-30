@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   ArrowDown,
+  ArrowClockwise,
   ArrowUp,
   Check,
   File,
@@ -54,7 +55,7 @@ function Message({ message, questionRef, active }) {
   </article>;
 }
 
-function Composer({ value, onChange, onSubmit, pending, onStop, compact, model, onModel, attachments, onFiles, onRemoveAttachment }) {
+function Composer({ value, onChange, onSubmit, pending, onStop, compact, model, onModel, attachments, onFiles, onRemoveAttachment, onRetryAttachment }) {
   const textareaRef = useRef(null);
   const fileRef = useRef(null);
   const menuRef = useRef(null);
@@ -89,9 +90,10 @@ function Composer({ value, onChange, onSubmit, pending, onStop, compact, model, 
   }, [open]);
 
   return <form className={`composer ${compact ? "is-compact" : ""} ${attachments.length ? "has-attachments" : ""}`} onSubmit={onSubmit}>
-    {attachments.length > 0 && <div className="attachment-strip">
-      {attachments.map((item) => <span className={`attachment-chip ${item.pending ? "is-uploading" : ""}`} key={item.localId}>
-        <Paperclip size={14} /><span>{item.name}</span>{item.pending && <i />}
+    {attachments.length > 0 && <div className="attachment-strip" aria-live="polite">
+      {attachments.map((item) => <span className={`attachment-chip ${item.pending ? "is-uploading" : ""} ${item.error ? "is-error" : ""}`} key={item.localId} title={item.error || item.name}>
+        {item.error ? <WarningCircle size={15} weight="fill" /> : <Paperclip size={14} />}<span><b>{item.name}</b><small>{item.pending ? "正在保存到知识库" : item.error ? "未上传，点击重试" : "已加入本次任务"}</small></span>{item.pending && <i />}
+        {item.error && <button type="button" onClick={() => onRetryAttachment(item.localId)} aria-label={`重新上传 ${item.name}`}><ArrowClockwise size={13} /></button>}
         {!item.pending && <button type="button" onClick={() => onRemoveAttachment(item.localId)} aria-label={`移除 ${item.name}`}><X size={13} /></button>}
       </span>)}
     </div>}
@@ -145,20 +147,32 @@ export function App() {
     return () => { cancelled = true; if (frame) cancelAnimationFrame(frame); };
   }, [activeQuestionId]);
 
+  async function uploadAttachment(localId, file) {
+    try {
+      const response = await fetch(`${API_ROOT}/uploads`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream", "X-File-Name": encodeURIComponent(file.name), "X-Session-Id": sessionId }, body: file });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.attachment?.artifactId) {
+        const message = payload.error || (response.status === 413 ? "文件超过 8MB 上限" : response.status === 415 ? "暂不支持这种文件格式" : "文件尚未写入知识库");
+        throw new Error(message);
+      }
+      setAttachments((current) => current.map((item) => item.localId === localId ? { ...item, ...payload.attachment, pending: false, error: "" } : item));
+    } catch (error) {
+      setAttachments((current) => current.map((item) => item.localId === localId ? { ...item, pending: false, error: error.message || "上传失败" } : item));
+    }
+  }
+
   async function addFiles(files) {
-    const accepted = files.slice(0, Math.max(0, 6 - attachments.length));
+    const known = new Set(attachments.map((item) => `${item.name}:${item.size}:${item.lastModified || ""}`));
+    const accepted = files.filter((file) => {
+      const key = `${file.name}:${file.size}:${file.lastModified || ""}`;
+      if (known.has(key)) return false;
+      known.add(key);
+      return true;
+    }).slice(0, Math.max(0, 6 - attachments.length));
     for (const file of accepted) {
       const localId = newId();
-      setAttachments((current) => [...current, { localId, name: file.name, size: file.size, type: file.type, pending: true }]);
-      try {
-        const response = await fetch(`${API_ROOT}/uploads`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream", "X-File-Name": encodeURIComponent(file.name), "X-Session-Id": sessionId }, body: file });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "上传失败");
-        setAttachments((current) => current.map((item) => item.localId === localId ? { ...item, ...payload.attachment, pending: false } : item));
-      } catch (error) {
-        setAttachments((current) => current.filter((item) => item.localId !== localId));
-        setMessages((current) => [...current, { id: newId(), role: "assistant", error: `${file.name}：${error.message}`, pending: false, status: { phase: "error", label: "文件未能上传" } }]);
-      }
+      setAttachments((current) => [...current, { localId, name: file.name, size: file.size, lastModified: file.lastModified, type: file.type, file, pending: true, error: "" }]);
+      await uploadAttachment(localId, file);
     }
   }
 
@@ -209,7 +223,12 @@ export function App() {
     } finally { requestController.current = null; setPending(false); updateAnswer((answer) => ({ ...answer, pending: false })); }
   }
 
-  const composerProps = { value: input, onChange: setInput, onSubmit: submit, pending, onStop: stop, model, onModel: setModel, attachments, onFiles: addFiles, onRemoveAttachment: (id) => setAttachments((current) => current.filter((item) => item.localId !== id)) };
+  const composerProps = { value: input, onChange: setInput, onSubmit: submit, pending, onStop: stop, model, onModel: setModel, attachments, onFiles: addFiles, onRemoveAttachment: (id) => setAttachments((current) => current.filter((item) => item.localId !== id)), onRetryAttachment: (id) => {
+    const item = attachments.find((entry) => entry.localId === id);
+    if (!item?.file || item.pending) return;
+    setAttachments((current) => current.map((entry) => entry.localId === id ? { ...entry, pending: true, error: "" } : entry));
+    void uploadAttachment(id, item.file);
+  } };
   return <main className={hasConversation ? "conversation-shell" : "empty-shell"}>
     {!hasConversation ? <section className="empty-state"><h1>在长翼久安知识库中做些什么？</h1><Composer {...composerProps} /></section>
       : <><section className="conversation" aria-label="知识库问答">{messages.map((message) => <Message key={message.id} message={message} active={message.id === activeQuestionId} questionRef={activeQuestionRef} />)}</section><div className="composer-dock"><Composer {...composerProps} compact /></div></>}
