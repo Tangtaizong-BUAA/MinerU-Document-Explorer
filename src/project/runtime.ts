@@ -206,7 +206,7 @@ const MINERU_MIME_TYPES = new Set([
 ]);
 const INLINE_TEXT_MIME_TYPES = new Set(["text/markdown", "text/plain", "text/csv", "application/json", "application/yaml", "text/yaml"]);
 const PUBLISHABLE_MIME_TYPES = new Set([...INLINE_TEXT_MIME_TYPES, ...MINERU_MIME_TYPES]);
-const MAX_INLINE_RESOURCE_BYTES = 640 * 1024;
+const MAX_INLINE_RESOURCE_BYTES = 8 * 1024 * 1024;
 const GRAPH_REFERENCE_FIELDS: Array<{ field: string; relation: string }> = [
   { field: "section_refs", relation: "has_section" },
   { field: "child_section_refs", relation: "has_subsection" },

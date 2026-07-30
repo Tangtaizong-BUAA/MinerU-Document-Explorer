@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 process.env.CYJ_AGENT_DEMO_MODE = "1";
-const { createAppServer, deepFindArtifacts, redactInternalNames } = await import("../server/index.mjs");
+const { createAppServer, deepFindArtifacts, redactInternalNames, selectedModel, uploadMimeType } = await import("../server/index.mjs");
 
 async function withServer(run) {
   const server = createAppServer();
@@ -22,10 +22,33 @@ test("health endpoint is scoped to the agent base path", async () => {
     assert.deepEqual(await response.json(), {
       ok: true,
       service: "changyi-jiuan-agent-web",
-      version: "0.5.1",
+      version: "0.5.2",
       mode: "demo",
     });
   });
+});
+
+test("model selections use the requested routing policy", () => {
+  assert.equal(selectedModel("auto").modelId, "qwen3.7-flash");
+  assert.equal(selectedModel("fable-5").modelId, "qwen3.8-max");
+  assert.equal(selectedModel("qwen3.8-max").modelId, "qwen3.8-max");
+  assert.equal(selectedModel("qwen3.7-flash").modelId, "qwen3.7-flash");
+});
+
+test("demo upload accepts and registers a supported file", async () => {
+  await withServer(async (base) => {
+    const response = await fetch(`${base}/cyj/agent/api/uploads`, { method: "POST", headers: { "content-type": "image/png", "x-file-name": encodeURIComponent("参考图.png"), "x-session-id": "test-session" }, body: Buffer.from("synthetic-image") });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.attachment.name, "参考图.png");
+    assert.equal(payload.attachment.mimeType, "image/png");
+  });
+});
+
+test("upload infers a safe MIME type when the browser only sends octet-stream", () => {
+  assert.equal(uploadMimeType("答辩版.pptx", "application/octet-stream"), "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+  assert.equal(uploadMimeType("现场照片.JPG", ""), "image/jpeg");
+  assert.equal(uploadMimeType("unknown.bin", "application/octet-stream"), "application/octet-stream");
 });
 
 test("internal tool and framework names are removed from visible answers", () => {

@@ -15,7 +15,7 @@ const memoryUpdate = z.object({
 const generatedResource = z.object({
   title: z.string().min(1).max(240), filename: z.string().min(1).max(180),
   content_type: z.enum(["text/markdown", "text/plain", "text/csv", "application/json", "application/yaml", "text/yaml", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/jp2"]),
-  encoding: z.enum(["utf8", "base64"]).optional().default("utf8"), content: z.string().min(1).max(900_000),
+  encoding: z.enum(["utf8", "base64"]).optional().default("utf8"), content: z.string().min(1).max(11_300_000),
   kind: z.enum(["note", "report", "deliverable", "dataset", "code", "image", "document"]),
   source_refs: z.array(z.string()).max(50).optional(), confidentiality: z.enum(["public", "internal", "restricted"]).optional().default("internal"),
 });

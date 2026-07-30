@@ -1,6 +1,6 @@
 # 长翼久安线上 Agent
 
-当前版本：`0.5.1`
+当前版本：`0.5.2`
 
 面向团队成员的极简网页 Agent。浏览器只负责流式交互；Node 后端使用
 Vercel AI SDK `ToolLoopAgent` 调用经过白名单限制的长翼久安 MCP 工具。
@@ -9,6 +9,11 @@ Vercel AI SDK `ToolLoopAgent` 调用经过白名单限制的长翼久安 MCP 工
 Markdown、TXT、CSV、JSON、YAML 和代码文件。Office 二进制与 base64 上传
 全部在服务器工具内部完成，不进入模型上下文。PDF 尚未开放，避免在没有
 中文字体与版式转换验收的情况下提供伪支持。
+
+交互支持 Auto、Fable 5、qwen3.8-max、qwen3.7-flash 四个选择；
+Fable 5 与 qwen3.8-max 走增强模型，Auto 与 qwen3.7-flash 走快速模型，
+四种选择均启用 thinking。输入栏左侧统一提供模型切换与文件上传；单个文件
+当前上限为 8MB。进行中的请求可终止，完成后可在同一会话继续跟进。
 
 ## 生产入口
 

@@ -12,7 +12,7 @@ import { registerLightweightProjectResource } from "./project-resource.js";
 import { registerProjectTools } from "./tools/project.js";
 
 const DEFAULT_SESSION_TTL_MS = 30 * 60 * 1000;
-const DEFAULT_MAX_REQUEST_BYTES = 2 * 1024 * 1024;
+const DEFAULT_MAX_REQUEST_BYTES = 14 * 1024 * 1024;
 
 type ProjectServerProfile = Exclude<ProjectProfile, "upstream-full">;
 type Session = { transport: WebStandardStreamableHTTPServerTransport; lastSeenAt: number; principal: ProjectPrincipal };

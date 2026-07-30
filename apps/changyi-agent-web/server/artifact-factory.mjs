@@ -18,7 +18,7 @@ import { z } from "zod";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-const MAX_BINARY_BYTES = 640 * 1024;
+const MAX_BINARY_BYTES = 8 * 1024 * 1024;
 
 const filenameSchema = z.string().min(1).max(120);
 const workIdSchema = z.string().min(1).max(160);
@@ -319,7 +319,7 @@ async function publishResource(mcpClient, workId, resource) {
 
 async function publishBinary(mcpClient, input, buffer, contentType, extension, kind) {
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new Error("生成的文件为空");
-  if (buffer.length > MAX_BINARY_BYTES) throw new Error("生成文件超过 640KB 在线持久化限制，请拆分内容");
+  if (buffer.length > MAX_BINARY_BYTES) throw new Error("生成文件超过 8MB 在线持久化限制，请拆分内容");
   return publishResource(mcpClient, input.work_id, {
     title: input.title,
     filename: safeFilename(input.filename, extension),
