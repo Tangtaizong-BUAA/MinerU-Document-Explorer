@@ -92,7 +92,7 @@ function Composer({ value, onChange, onSubmit, pending, onStop, compact, model, 
   return <form className={`composer ${compact ? "is-compact" : ""} ${attachments.length ? "has-attachments" : ""}`} onSubmit={onSubmit}>
     {attachments.length > 0 && <div className="attachment-strip" aria-live="polite">
       {attachments.map((item) => <span className={`attachment-chip ${item.pending ? "is-uploading" : ""} ${item.error ? "is-error" : ""}`} key={item.localId} title={item.error || item.name}>
-        {item.error ? <WarningCircle size={15} weight="fill" /> : <Paperclip size={14} />}<span><b>{item.name}</b><small>{item.pending ? "正在保存到知识库" : item.error ? "未上传，点击重试" : "已加入本次任务"}</small></span>{item.pending && <i />}
+        {item.error ? <WarningCircle size={15} weight="fill" /> : <Paperclip size={14} />}<span><b>{item.name}</b><small>{item.pending ? "正在附加到本次对话" : item.error ? "未能附加，点击重试" : "仅用于本次对话"}</small></span>{item.pending && <i />}
         {item.error && <button type="button" onClick={() => onRetryAttachment(item.localId)} aria-label={`重新上传 ${item.name}`}><ArrowClockwise size={13} /></button>}
         {!item.pending && <button type="button" onClick={() => onRemoveAttachment(item.localId)} aria-label={`移除 ${item.name}`}><X size={13} /></button>}
       </span>)}
@@ -102,7 +102,7 @@ function Composer({ value, onChange, onSubmit, pending, onStop, compact, model, 
         <button className="plus-button" type="button" onClick={toggleMenu} aria-expanded={open} aria-label="添加文件或选择模型"><Plus size={19} weight="regular" /></button>
         <input ref={fileRef} className="file-input" type="file" multiple onChange={(event) => { onFiles([...event.target.files]); event.target.value = ""; closeMenu(); }} />
         {menuMounted && <div className={`composer-menu ${open ? "is-open" : "is-closing"}`} onAnimationEnd={() => { if (!open) setMenuMounted(false); }}>
-          <button className="upload-row" type="button" onClick={() => fileRef.current?.click()}><Paperclip size={18} /><span><strong>上传文件</strong><small>图片、PDF、Office、文本</small></span></button>
+          <button className="upload-row" type="button" onClick={() => fileRef.current?.click()}><Paperclip size={18} /><span><strong>添加文件</strong><small>也可拖入或粘贴图片、PDF、Office、文本</small></span></button>
           <div className="menu-divider" />
           {MODELS.map((item) => <button className={`model-row ${model === item.id ? "is-selected" : ""}`} type="button" key={item.id} onClick={() => { onModel(item.id); closeMenu(); }}>
             <strong>{item.label}</strong>{item.detail && <span className="model-detail">{item.detail}</span>}{model === item.id && <Check className="model-check" size={15} weight="bold" />}
@@ -124,6 +124,8 @@ export function App() {
   const [pending, setPending] = useState(false);
   const [model, setModel] = useState(() => localStorage.getItem("cyj-agent-model") || "auto");
   const [attachments, setAttachments] = useState([]);
+  const [dragActive, setDragActive] = useState(false);
+  const dragDepth = useRef(0);
   const [sessionId] = useState(() => localStorage.getItem("cyj-agent-session") || newId());
   const activeQuestionRef = useRef(null);
   const requestController = useRef(null);
@@ -133,6 +135,16 @@ export function App() {
 
   useEffect(() => { localStorage.setItem("cyj-agent-session", sessionId); }, [sessionId]);
   useEffect(() => { localStorage.setItem("cyj-agent-model", model); }, [model]);
+  useEffect(() => {
+    const onPaste = (event) => {
+      const files = [...(event.clipboardData?.items || [])].filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter(Boolean);
+      if (!files.length) return;
+      event.preventDefault();
+      void addFiles(files);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [attachments]);
   useLayoutEffect(() => {
     if (!activeQuestionId || !activeQuestionRef.current) return;
     let frame;
@@ -151,8 +163,8 @@ export function App() {
     try {
       const response = await fetch(`${API_ROOT}/uploads`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream", "X-File-Name": encodeURIComponent(file.name), "X-Session-Id": sessionId }, body: file });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.attachment?.artifactId) {
-        const message = payload.error || (response.status === 413 ? "文件超过 8MB 上限" : response.status === 415 ? "暂不支持这种文件格式" : "文件尚未写入知识库");
+      if (!response.ok || !payload.attachment?.attachmentId) {
+        const message = payload.error || (response.status === 413 ? "文件超过 80MB 上限" : response.status === 415 ? "暂不支持这种文件格式" : "文件未能附加到本次对话");
         throw new Error(message);
       }
       setAttachments((current) => current.map((item) => item.localId === localId ? { ...item, ...payload.attachment, pending: false, error: "" } : item));
@@ -169,11 +181,18 @@ export function App() {
       known.add(key);
       return true;
     }).slice(0, Math.max(0, 6 - attachments.length));
-    for (const file of accepted) {
+    await Promise.all(accepted.map(async (file) => {
       const localId = newId();
       setAttachments((current) => [...current, { localId, name: file.name, size: file.size, lastModified: file.lastModified, type: file.type, file, pending: true, error: "" }]);
       await uploadAttachment(localId, file);
-    }
+    }));
+  }
+
+  async function removeAttachment(id) {
+    const item = attachments.find((entry) => entry.localId === id);
+    setAttachments((current) => current.filter((entry) => entry.localId !== id));
+    if (!item?.attachmentId) return;
+    await fetch(`${API_ROOT}/uploads/${encodeURIComponent(item.attachmentId)}`, { method: "DELETE", headers: { "X-Session-Id": sessionId } }).catch(() => {});
   }
 
   function stop() { requestController.current?.abort(); }
@@ -181,7 +200,7 @@ export function App() {
   async function submit(event) {
     event.preventDefault();
     const text = input.trim();
-    const readyAttachments = attachments.filter((item) => !item.pending && item.artifactId);
+    const readyAttachments = attachments.filter((item) => !item.pending && item.attachmentId);
     if ((!text && !readyAttachments.length) || pending || attachments.some((item) => item.pending)) return;
     const answerId = newId();
     const questionId = newId();
@@ -200,7 +219,7 @@ export function App() {
     } else commitTurn();
     const updateAnswer = (updater) => setMessages((current) => current.map((message) => message.id === answerId ? updater(message) : message));
     try {
-      const response = await fetch(`${API_ROOT}/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ sessionId, message: displayText, model, attachments: readyAttachments.map(({ artifactId, name, mimeType }) => ({ artifactId, name, mimeType })) }) });
+      const response = await fetch(`${API_ROOT}/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ sessionId, message: displayText, model, attachments: readyAttachments.map(({ attachmentId, name, mimeType }) => ({ attachmentId, name, mimeType })) }) });
       if (!response.ok || !response.body) throw new Error((await response.text()) || `请求失败 (${response.status})`);
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
       while (true) {
@@ -223,13 +242,17 @@ export function App() {
     } finally { requestController.current = null; setPending(false); updateAnswer((answer) => ({ ...answer, pending: false })); }
   }
 
-  const composerProps = { value: input, onChange: setInput, onSubmit: submit, pending, onStop: stop, model, onModel: setModel, attachments, onFiles: addFiles, onRemoveAttachment: (id) => setAttachments((current) => current.filter((item) => item.localId !== id)), onRetryAttachment: (id) => {
+  const composerProps = { value: input, onChange: setInput, onSubmit: submit, pending, onStop: stop, model, onModel: setModel, attachments, onFiles: addFiles, onRemoveAttachment: removeAttachment, onRetryAttachment: (id) => {
     const item = attachments.find((entry) => entry.localId === id);
     if (!item?.file || item.pending) return;
     setAttachments((current) => current.map((entry) => entry.localId === id ? { ...entry, pending: true, error: "" } : entry));
     void uploadAttachment(id, item.file);
   } };
-  return <main className={hasConversation ? "conversation-shell" : "empty-shell"}>
+  const onDragEnter = (event) => { if (![...(event.dataTransfer?.types || [])].includes("Files")) return; event.preventDefault(); dragDepth.current += 1; setDragActive(true); };
+  const onDragLeave = (event) => { event.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDragActive(false); };
+  const onDrop = (event) => { event.preventDefault(); dragDepth.current = 0; setDragActive(false); const files = [...(event.dataTransfer?.files || [])]; if (files.length) void addFiles(files); };
+  return <main className={`${hasConversation ? "conversation-shell" : "empty-shell"} ${dragActive ? "is-dragging" : ""}`} onDragEnter={onDragEnter} onDragOver={(event) => event.preventDefault()} onDragLeave={onDragLeave} onDrop={onDrop}>
+    {dragActive && <div className="drop-overlay" role="status"><Paperclip size={25} weight="duotone" /><strong>放开即可附加到本次对话</strong><span>Agent 会先阅读，只有真正有长期价值时才整理进知识库</span></div>}
     {!hasConversation ? <section className="empty-state"><h1>在长翼久安知识库中做些什么？</h1><Composer {...composerProps} /></section>
       : <><section className="conversation" aria-label="知识库问答">{messages.map((message) => <Message key={message.id} message={message} active={message.id === activeQuestionId} questionRef={activeQuestionRef} />)}</section><div className="composer-dock"><Composer {...composerProps} compact /></div></>}
   </main>;

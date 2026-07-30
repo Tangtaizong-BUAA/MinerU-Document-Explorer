@@ -1,6 +1,6 @@
 {
   "name": "changyi-agent-web",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,11 +15,14 @@
   "dependencies": {
     "@ai-sdk/mcp": "^2.0.19",
     "@ai-sdk/openai-compatible": "^3.0.17",
+    "@mariozechner/pi-agent-core": "^0.73.1",
+    "@mariozechner/pi-ai": "^0.73.1",
     "@phosphor-icons/react": "^2.1.10",
     "@vitejs/plugin-react": "5.0.4",
     "ai": "^7.0.42",
     "docx": "^9.7.1",
     "jszip": "^3.10.1",
+    "pdf-parse": "^2.4.5",
     "pptxgenjs": "^4.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",

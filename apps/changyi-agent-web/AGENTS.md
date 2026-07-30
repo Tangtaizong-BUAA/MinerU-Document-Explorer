@@ -18,3 +18,6 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - Generated resources appear as compact rounded file cards with a working download action.
 - The interaction must stream, support light/dark system themes, and remain fully usable on mobile.
 - The public base path is `/cyj/agent/`; all browser API requests are same-origin and scoped below that path.
+- A user-added file is a temporary, session-scoped Agent attachment first; it must never be persisted to the knowledge base merely because it was selected, dropped, or pasted.
+- The Agent may promote an attachment to a durable Artifact only after reading it and identifying direct, reusable, long-term value for the 长翼久安 project; structural knowledge maintenance remains a separate closeout step.
+- File intake must support picker selection, page-level drag and drop, and clipboard file paste with the same status and error behavior.

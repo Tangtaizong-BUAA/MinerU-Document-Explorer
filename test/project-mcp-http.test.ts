@@ -129,6 +129,18 @@ describe("Changyi Jiuan HTTP MCP", () => {
     const readBody = await read.json() as { result: { contents: Array<{ mimeType?: string; blob?: string }> } };
     expect(readBody.result.contents[0]!.mimeType).toBe("application/pdf");
     expect(Buffer.from(readBody.result.contents[0]!.blob!, "base64").toString("utf8")).toBe("%PDF-http-test");
+
+    const chunkedBytes = Buffer.from("chunked-resource-round-trip");
+    const chunkedWork = await call("kb_start_work", { project_id: "project:cyj:http-persistence", objective: "Verify chunked resource upload", expected_outputs: ["chunked"], acceptance_criteria: ["ordered chunks round trip"] });
+    const begun = await call("kb_begin_resource_upload", {
+      work_id: String(chunkedWork.result.structuredContent.work_id), title: "Chunked resource", filename: "chunked.pdf", content_type: "application/pdf", kind: "document",
+      expected_size: chunkedBytes.length, expected_sha256: (await import("node:crypto")).createHash("sha256").update(chunkedBytes).digest("hex"),
+    });
+    const uploadId = String(begun.result.structuredContent.upload_id);
+    await call("kb_append_resource_chunk", { upload_id: uploadId, offset: 0, content_base64: chunkedBytes.subarray(0, 8).toString("base64") });
+    await call("kb_append_resource_chunk", { upload_id: uploadId, offset: 8, content_base64: chunkedBytes.subarray(8).toString("base64") });
+    const committed = await call("kb_commit_resource_upload", { upload_id: uploadId });
+    expect(committed.result.structuredContent.size_bytes).toBe(chunkedBytes.length);
   });
 
   test("keeps legacy main and section tools proposal-only over HTTP", async () => {

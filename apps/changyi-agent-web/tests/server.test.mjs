@@ -22,7 +22,8 @@ test("health endpoint is scoped to the agent base path", async () => {
     assert.deepEqual(await response.json(), {
       ok: true,
       service: "changyi-jiuan-agent-web",
-      version: "0.5.3",
+      version: "0.6.0",
+      harness: "pi-agent-core",
       mode: "demo",
     });
   });
@@ -35,13 +36,15 @@ test("model selections use the requested routing policy", () => {
   assert.equal(selectedModel("qwen3.7-flash").modelId, "qwen3.7-flash");
 });
 
-test("demo upload accepts and registers a supported file", async () => {
+test("demo upload stages a supported file without creating a knowledge artifact", async () => {
   await withServer(async (base) => {
     const response = await fetch(`${base}/cyj/agent/api/uploads`, { method: "POST", headers: { "content-type": "image/png", "x-file-name": encodeURIComponent("参考图.png"), "x-session-id": "test-session" }, body: Buffer.from("synthetic-image") });
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.attachment.name, "参考图.png");
     assert.equal(payload.attachment.mimeType, "image/png");
+    assert.match(payload.attachment.attachmentId, /^att-/);
+    assert.equal("artifactId" in payload.attachment, false);
   });
 });
 

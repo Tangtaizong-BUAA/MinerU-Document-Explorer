@@ -8,12 +8,15 @@ The online Agent is deliberately isolated from existing services:
 - MCP connection: anonymous `project-contribute` access at `https://argonai.cn/cyj/mcp`; resolver-only actions remain separately authenticated server-side.
 - environment: `/etc/changyi-jiuan-agent-web.env` (`0600`)
 - browser access: Nginx Basic Auth using `/etc/nginx/.htpasswd-changyi-agent`
-- upload boundary: Nginx permits up to 12 MiB; the application accepts one
-  supported file up to 8 MiB and returns a durable artifact identifier before
-  the browser marks it ready.
+- upload boundary: Nginx permits up to 96 MiB; the application accepts one
+  supported file up to 80 MiB and returns a temporary session attachment
+  identifier. The file becomes a durable Artifact only after the Agent reads it,
+  judges it useful to the project, and completes the controlled promotion flow.
 
-The service has no direct knowledge-base filesystem or database access. Its only
-knowledge capability is the allowlisted MCP tool set in `server/index.mjs`.
+The service has no direct knowledge-base filesystem or database access. Temporary
+attachments live in its systemd-isolated `/tmp`; durable knowledge only crosses
+the allowlisted MCP boundary. The Agent runtime has no Shell or arbitrary server
+filesystem tool.
 
 Before every rollout, back up `/etc/nginx/sites-enabled/argon-kb`, run
 `nginx -t`, then reload Nginx only after the test passes. Re-verify ports 8787,

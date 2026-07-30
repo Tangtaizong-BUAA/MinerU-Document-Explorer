@@ -206,7 +206,9 @@ const MINERU_MIME_TYPES = new Set([
 ]);
 const INLINE_TEXT_MIME_TYPES = new Set(["text/markdown", "text/plain", "text/csv", "application/json", "application/yaml", "text/yaml"]);
 const PUBLISHABLE_MIME_TYPES = new Set([...INLINE_TEXT_MIME_TYPES, ...MINERU_MIME_TYPES]);
-const MAX_INLINE_RESOURCE_BYTES = 8 * 1024 * 1024;
+// The public single-call MCP schema remains intentionally small. Chunked uploads
+// are assembled server-side before entering this common validation path.
+const MAX_INLINE_RESOURCE_BYTES = 100 * 1024 * 1024;
 const GRAPH_REFERENCE_FIELDS: Array<{ field: string; relation: string }> = [
   { field: "section_refs", relation: "has_section" },
   { field: "child_section_refs", relation: "has_subsection" },
@@ -498,7 +500,7 @@ export class ProjectRuntime {
     }
     if (INLINE_TEXT_MIME_TYPES.has(input.content_type) && SECRET_PATTERN.test(bytes.toString("utf8"))) throw new Error("Published text appears to contain a credential or private key");
     if (bytes.length === 0) throw new Error("Published resource content cannot be empty");
-    if (bytes.length > MAX_INLINE_RESOURCE_BYTES) throw new Error(`Published resource exceeds the ${MAX_INLINE_RESOURCE_BYTES}-byte inline MCP limit; use a configured source root for large files`);
+    if (bytes.length > MAX_INLINE_RESOURCE_BYTES) throw new Error(`Published resource exceeds the ${MAX_INLINE_RESOURCE_BYTES}-byte managed resource limit`);
     return bytes;
   }
 

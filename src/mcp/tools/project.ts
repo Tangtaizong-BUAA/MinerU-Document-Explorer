@@ -1,5 +1,9 @@
 /** Low-token MCP tools for the Changyi Jiuan project profile. */
 
+import { createHash, randomUUID } from "node:crypto";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ProjectRuntime, type ProjectProfile, type PublishedResource } from "../../project/runtime.js";
@@ -19,6 +23,24 @@ const generatedResource = z.object({
   kind: z.enum(["note", "report", "deliverable", "dataset", "code", "image", "document"]),
   source_refs: z.array(z.string()).max(50).optional(), confidentiality: z.enum(["public", "internal", "restricted"]).optional().default("internal"),
 });
+const CHUNK_BYTES = 4 * 1024 * 1024;
+const MAX_CHUNKED_RESOURCE_BYTES = 100 * 1024 * 1024;
+const UPLOAD_ROOT = join(tmpdir(), "changyi-jiuan-mcp-uploads");
+type ChunkUpload = {
+  id: string; work_id: string; actor: string; title: string; filename: string; content_type: z.infer<typeof generatedResource>["content_type"];
+  kind: z.infer<typeof generatedResource>["kind"]; source_refs?: string[]; confidentiality: "public" | "internal" | "restricted";
+  expected_size: number; expected_sha256: string; received_size: number; path: string; expires_at: number;
+};
+const chunkUploads = new Map<string, ChunkUpload>();
+
+async function cleanupChunkUploads(): Promise<void> {
+  const now = Date.now();
+  for (const [id, upload] of chunkUploads) {
+    if (upload.expires_at > now) continue;
+    chunkUploads.delete(id);
+    await rm(upload.path, { force: true }).catch(() => undefined);
+  }
+}
 const isOps = (profile: ProjectProfile) => profile === "project-ops" || profile === "project-admin";
 const isLegacyWriter = (profile: ProjectProfile) => profile === "project-maintain" || profile === "project-admin";
 const visibleTo = (record: { confidentiality?: unknown }, profile: ProjectProfile) => isOps(profile) || record.confidentiality !== "restricted" && record.confidentiality !== "secret";
@@ -236,6 +258,84 @@ export function registerProjectTools(server: McpServer, runtime: ProjectRuntime,
     try {
       const output = await runtime.publishResource({ ...resource, work_id, actor });
       return textResult(`Published ${output.artifact_id}; searchable=${output.searchable}.`, output);
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  });
+
+  server.registerTool("kb_begin_resource_upload", {
+    title: "Begin Chunked Resource Upload",
+    description: "Begin a resumable server-side upload for a durable project resource that is too large for kb_publish_resource. This only allocates temporary upload state; commit is required to create an Artifact.",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    inputSchema: {
+      work_id: z.string(), title: z.string().min(1).max(240), filename: z.string().min(1).max(180),
+      content_type: generatedResource.shape.content_type, kind: generatedResource.shape.kind,
+      expected_size: z.number().int().min(1).max(MAX_CHUNKED_RESOURCE_BYTES), expected_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      source_refs: z.array(z.string()).max(50).optional(), confidentiality: z.enum(["public", "internal", "restricted"]).optional().default("internal"),
+    },
+  }, async (input) => {
+    try {
+      await cleanupChunkUploads();
+      const workItem = await runtime.get(input.work_id);
+      if (!workItem?.record || workItem.record.type !== "work_item") throw new Error(`Unknown work item: ${input.work_id}`);
+      await mkdir(UPLOAD_ROOT, { recursive: true });
+      const id = `resource_upload:cyj:${randomUUID().replace(/-/g, "")}`;
+      const path = join(UPLOAD_ROOT, `${id.replace(/[^A-Za-z0-9._-]/g, "_")}.bin`);
+      await writeFile(path, Buffer.alloc(0), { mode: 0o600 });
+      chunkUploads.set(id, { id, ...input, actor, received_size: 0, path, expires_at: Date.now() + 30 * 60 * 1000 });
+      return textResult(`Chunked upload ${id} ready; chunk_bytes=${CHUNK_BYTES}.`, { upload_id: id, chunk_bytes: CHUNK_BYTES, expected_size: input.expected_size, expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() });
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  });
+
+  server.registerTool("kb_append_resource_chunk", {
+    title: "Append Resource Upload Chunk",
+    description: "Append one ordered base64 chunk to a temporary chunked resource upload. Offset must exactly match the acknowledged received byte count.",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    inputSchema: { upload_id: z.string(), offset: z.number().int().min(0), content_base64: z.string().min(4).max(5_700_000) },
+  }, async ({ upload_id, offset, content_base64 }) => {
+    try {
+      await cleanupChunkUploads();
+      const upload = chunkUploads.get(upload_id);
+      if (!upload || upload.actor !== actor) throw new Error("Unknown or expired chunked upload");
+      if (offset !== upload.received_size) throw new Error(`Chunk offset mismatch: expected ${upload.received_size}, received ${offset}`);
+      const compact = content_base64.replace(/\s+/g, "");
+      if (compact.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) throw new Error("Invalid base64 upload chunk");
+      const bytes = Buffer.from(compact, "base64");
+      if (!bytes.length || bytes.length > CHUNK_BYTES) throw new Error(`Chunk must contain 1-${CHUNK_BYTES} decoded bytes`);
+      if (upload.received_size + bytes.length > upload.expected_size) throw new Error("Chunk exceeds declared resource size");
+      await appendFile(upload.path, bytes);
+      upload.received_size += bytes.length;
+      upload.expires_at = Date.now() + 30 * 60 * 1000;
+      return textResult(`Chunk accepted; received=${upload.received_size}/${upload.expected_size}.`, { upload_id, received_size: upload.received_size, expected_size: upload.expected_size, complete: upload.received_size === upload.expected_size });
+    } catch (error) {
+      return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+    }
+  });
+
+  server.registerTool("kb_commit_resource_upload", {
+    title: "Commit Chunked Resource Upload",
+    description: "Verify size and SHA-256, atomically publish the completed temporary upload as a durable Artifact, then remove temporary upload state.",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    inputSchema: { upload_id: z.string() },
+  }, async ({ upload_id }) => {
+    try {
+      await cleanupChunkUploads();
+      const upload = chunkUploads.get(upload_id);
+      if (!upload || upload.actor !== actor) throw new Error("Unknown or expired chunked upload");
+      if (upload.received_size !== upload.expected_size) throw new Error(`Upload incomplete: ${upload.received_size}/${upload.expected_size} bytes`);
+      const bytes = await readFile(upload.path);
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      if (sha256 !== upload.expected_sha256) throw new Error("Upload SHA-256 mismatch");
+      const output = await runtime.publishResource({
+        work_id: upload.work_id, actor: upload.actor, title: upload.title, filename: upload.filename,
+        content_type: upload.content_type, encoding: "base64", content: bytes.toString("base64"), kind: upload.kind,
+        source_refs: upload.source_refs, confidentiality: upload.confidentiality,
+      });
+      chunkUploads.delete(upload_id);
+      await rm(upload.path, { force: true });
+      return textResult(`Committed ${output.artifact_id}; searchable=${output.searchable}.`, output);
     } catch (error) {
       return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
     }
