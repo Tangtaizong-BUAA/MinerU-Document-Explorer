@@ -18,6 +18,7 @@ describe("Changyi Jiuan client deployment templates", () => {
     const dockerfile = await readFile(join(root, "deploy", "home", "Dockerfile"), "utf8");
     const requirements = await readFile(join(root, "deploy", "home", "requirements.txt"), "utf8");
     const compose = await readFile(join(root, "deploy", "home", "compose.yaml"), "utf8");
+    const agentConfig = await readFile(join(root, "src", "backends", "python", "cyj_maintenance_agent.yaml"), "utf8");
 
     expect(dockerfile).toContain("--no-deps --index-url \"$PIP_INDEX_URL\" ms-agent==1.6.0");
     expect(dockerfile).toContain("apt-get install -y --no-install-recommends build-essential");
@@ -35,6 +36,9 @@ describe("Changyi Jiuan client deployment templates", () => {
     expect(service).toContain("mem_limit: 384m");
     expect(service).toContain("memswap_limit: 768m");
     expect(service).not.toContain("mem_limit: 1536m");
+    expect(agentConfig).toContain("enable_thinking: false");
+    expect(agentConfig).toContain("max_tokens: 1200");
+    expect(agentConfig).toContain("max_chat_round: 4");
   });
 
   test("Alibaba standby runs the same lightweight runtime in read-only profile", async () => {

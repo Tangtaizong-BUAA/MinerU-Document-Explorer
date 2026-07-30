@@ -7,6 +7,8 @@ generation_config:
   stream: false
   temperature: 0.1
   max_tokens: 1200
+  extra_body:
+    enable_thinking: false
 max_chat_round: 4
 save_history: false
 callbacks:
