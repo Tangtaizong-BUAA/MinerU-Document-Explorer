@@ -8,6 +8,7 @@ import { MsAgentMaintenanceAdapter } from "../src/project/maintenance/ms-agent-a
 import { MAINTENANCE_PROMPT_VERSION, MAINTENANCE_TOOL_SCHEMA_VERSION, validateMaintenancePlan, type ChangePacket } from "../src/project/maintenance/contracts.js";
 import { authenticatePrincipal, canResolveConflicts, tokenSha256 } from "../src/project/principals.js";
 import { ProjectRuntime } from "../src/project/runtime.js";
+import { readFile } from "node:fs/promises";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
@@ -64,6 +65,13 @@ describe("0.5 maintenance security boundary", () => {
     await expect(adapter.selfTest()).resolves.toMatchObject({ framework: "modelscope-ms-agent", framework_version: "1.6.0", default_model: "qwen3.7-flash", model_tools: ["read_change_packet", "read_document_blocks", "read_evidence", "read_topology_neighborhood", "search_maintenance_evidence", "find_open_conflicts", "submit_maintenance_plan", "finish_no_change", "report_insufficient_evidence"] });
     const plan = await adapter.propose(packet());
     expect(plan.operations).toEqual([{ op: "no_change", reason: "offline contract self-test" }]);
+  });
+
+  test("requires the maintenance planner to replace explicitly outdated current-state text", async () => {
+    const worker = await readFile(join(process.cwd(), "src/backends/python/cyj_maintenance_worker.py"), "utf8");
+    expect(worker).toContain("current-state statement is outdated");
+    expect(worker).toContain("preserve unrelated bullets verbatim");
+    expect(worker).toContain("prioritize the project main file");
   });
 
   test("uses SHA-256 over the exact resolution statement", () => {

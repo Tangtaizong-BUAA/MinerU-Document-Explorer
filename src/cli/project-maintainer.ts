@@ -30,7 +30,10 @@ do {
       const packet = await runtime.refreshMaintenancePacket(job.packet);
       try {
         const plan = await adapter.propose(packet);
-        await runtime.applyMaintenancePlan(packet, plan, owner);
+        const committed = await runtime.applyMaintenancePlan(packet, plan, owner);
+        const operations = plan.operations.map(operation => operation.op).join(",");
+        const noChangeReason = plan.operations.length === 1 && plan.operations[0]?.op === "no_change" ? ` reason=${plan.operations[0].reason}` : "";
+        console.log(`Maintenance packet ${job.packet.packet_id} completed operations=${operations} changed=${committed.changed_records.length}${noChangeReason}`);
         applied = true;
         break;
       } catch (error) {
