@@ -27,6 +27,19 @@ const MODELS = [
 
 const statusIcons = { brief: Sparkle, search: MagnifyingGlass, read: File, publish: File, closeout: Check, done: Check, stopped: Stop, error: WarningCircle };
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+const UPDATE_NOTICE_KEY = "cyj-agent-update-0.6.0";
+
+function UpdateNotice({ closing, onClose, onClosed }) {
+  return <aside className={`update-notice ${closing ? "is-closing" : ""}`} aria-label="版本更新说明" onAnimationEnd={() => { if (closing) onClosed(); }}>
+    <div className="update-mark" aria-hidden="true"><Sparkle size={18} weight="fill" /></div>
+    <div className="update-copy">
+      <small>0.6.0 更新</small>
+      <strong>Agent 能力大升级</strong>
+      <p>现在能连续调用知识库与联网搜索、理解图片和文档，并只把真正有长期价值的资料沉淀为项目知识。</p>
+    </div>
+    <button type="button" onClick={onClose} aria-label="关闭更新说明"><X size={16} /></button>
+  </aside>;
+}
 
 function ArtifactCard({ artifact }) {
   return <a className="artifact-card" href={artifact.downloadUrl} download>
@@ -125,6 +138,8 @@ export function App() {
   const [model, setModel] = useState(() => localStorage.getItem("cyj-agent-model") || "auto");
   const [attachments, setAttachments] = useState([]);
   const [dragActive, setDragActive] = useState(false);
+  const [showUpdate, setShowUpdate] = useState(() => localStorage.getItem(UPDATE_NOTICE_KEY) !== "seen");
+  const [updateClosing, setUpdateClosing] = useState(false);
   const dragDepth = useRef(0);
   const [sessionId] = useState(() => localStorage.getItem("cyj-agent-session") || newId());
   const activeQuestionRef = useRef(null);
@@ -252,6 +267,7 @@ export function App() {
   const onDragLeave = (event) => { event.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDragActive(false); };
   const onDrop = (event) => { event.preventDefault(); dragDepth.current = 0; setDragActive(false); const files = [...(event.dataTransfer?.files || [])]; if (files.length) void addFiles(files); };
   return <main className={`${hasConversation ? "conversation-shell" : "empty-shell"} ${dragActive ? "is-dragging" : ""}`} onDragEnter={onDragEnter} onDragOver={(event) => event.preventDefault()} onDragLeave={onDragLeave} onDrop={onDrop}>
+    {showUpdate && <UpdateNotice closing={updateClosing} onClose={() => setUpdateClosing(true)} onClosed={() => { localStorage.setItem(UPDATE_NOTICE_KEY, "seen"); setShowUpdate(false); }} />}
     {dragActive && <div className="drop-overlay" role="status"><Paperclip size={25} weight="duotone" /><strong>放开即可附加到本次对话</strong><span>Agent 会先阅读，只有真正有长期价值时才整理进知识库</span></div>}
     {!hasConversation ? <section className="empty-state"><h1>在长翼久安知识库中做些什么？</h1><Composer {...composerProps} /></section>
       : <><section className="conversation" aria-label="知识库问答">{messages.map((message) => <Message key={message.id} message={message} active={message.id === activeQuestionId} questionRef={activeQuestionRef} />)}</section><div className="composer-dock"><Composer {...composerProps} compact /></div></>}

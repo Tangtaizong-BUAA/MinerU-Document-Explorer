@@ -9,6 +9,16 @@ html { background: var(--page); }
 body { margin: 0; min-width: 320px; min-height: 100vh; color: var(--text); background: var(--page); -webkit-font-smoothing: antialiased; }
 button, textarea { font: inherit; } button, a { -webkit-tap-highlight-color: transparent; }
 .empty-shell, .conversation-shell { min-height: 100dvh; background: var(--page); }
+.update-notice { position: fixed; z-index: 80; top: max(18px, env(safe-area-inset-top)); left: 50%; width: min(520px, calc(100% - 32px)); min-height: 108px; padding: 17px 48px 17px 17px; display: flex; align-items: flex-start; gap: 13px; border: 1px solid var(--border); border-radius: 25px; color: var(--text); background: color-mix(in srgb, var(--page) 86%, transparent); box-shadow: 0 22px 70px rgba(14,18,28,.14), inset 0 1px 0 rgba(255,255,255,.72); backdrop-filter: blur(30px) saturate(160%); -webkit-backdrop-filter: blur(30px) saturate(160%); transform: translateX(-50%); animation: update-in .42s cubic-bezier(.2,.8,.2,1) both; }
+.update-notice.is-closing { pointer-events: none; animation: update-out .22s cubic-bezier(.4,0,1,1) both; }
+.update-mark { width: 37px; height: 37px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 12px; color: #fff; background: linear-gradient(145deg,#5a7cff,#7e5cff); box-shadow: 0 8px 24px rgba(92,92,255,.25); }
+.update-copy { min-width: 0; display: grid; gap: 3px; }
+.update-copy small { color: var(--muted); font-size: 11px; font-weight: 570; letter-spacing: .02em; }
+.update-copy strong { font-size: 17px; font-weight: 650; letter-spacing: -.025em; }
+.update-copy p { margin: 3px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.update-notice > button { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; color: var(--muted); background: transparent; cursor: pointer; transition: background .18s ease, color .18s ease, transform .18s ease; }
+.update-notice > button:hover { color: var(--text); background: var(--panel-strong); }
+.update-notice > button:active { transform: scale(.92); }
 .drop-overlay { position: fixed; z-index: 100; inset: 18px; display: grid; place-content: center; justify-items: center; gap: 9px; border: 1.5px solid rgba(68,124,255,.55); border-radius: 30px; color: var(--text); background: color-mix(in srgb, var(--page) 78%, transparent); box-shadow: inset 0 0 0 1px rgba(255,255,255,.32), 0 28px 90px rgba(0,0,0,.12); backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); pointer-events: none; animation: drop-in .22s cubic-bezier(.2,.8,.2,1) both; }
 .drop-overlay strong { font-size: 18px; font-weight: 610; letter-spacing: -.025em; }
 .drop-overlay span { max-width: 440px; padding-inline: 18px; color: var(--muted); text-align: center; font-size: 13px; line-height: 1.45; }
@@ -71,6 +81,8 @@ button, textarea { font: inherit; } button, a { -webkit-tap-highlight-color: tra
 @keyframes menu-in{from{opacity:0;transform:translateY(10px) scale(.955)}to{opacity:1;transform:none}}
 @keyframes menu-out{from{opacity:1;transform:none}to{opacity:0;transform:translateY(7px) scale(.97)}}
 @keyframes drop-in{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
+@keyframes update-in{from{opacity:0;transform:translate(-50%,-16px) scale(.97)}to{opacity:1;transform:translateX(-50%)}}
+@keyframes update-out{from{opacity:1;transform:translateX(-50%)}to{opacity:0;transform:translate(-50%,-10px) scale(.98)}}
 ::view-transition-group(cyj-composer){animation-duration:.48s;animation-timing-function:cubic-bezier(.2,.8,.2,1)}
 ::view-transition-old(root){animation:.22s ease both fade-out}
 ::view-transition-new(root){animation:.34s ease both fade-in}
@@ -85,6 +97,7 @@ button, textarea { font: inherit; } button, a { -webkit-tap-highlight-color: tra
   .agent-turn:last-child{min-height:calc(100dvh - 205px)}
   .attachment-chip{max-width:190px}
   .drop-overlay{inset:9px;border-radius:25px}.drop-overlay strong{font-size:16px}
+  .update-notice{top:max(10px,env(safe-area-inset-top));width:calc(100% - 20px);min-height:100px;padding:15px 42px 15px 14px;border-radius:22px;gap:11px}.update-mark{width:34px;height:34px;border-radius:11px}.update-copy strong{font-size:16px}.update-copy p{font-size:12px;line-height:1.45}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
 @media(prefers-color-scheme:dark){
@@ -92,6 +105,7 @@ button, textarea { font: inherit; } button, a { -webkit-tap-highlight-color: tra
   .composer{background:linear-gradient(180deg,rgba(31,31,34,.94),rgba(20,20,22,.9));box-shadow:0 22px 70px rgba(0,0,0,.68),inset 0 1px 0 rgba(255,255,255,.13),inset 0 -1px 0 rgba(255,255,255,.035)}
   .composer:focus-within{border-color:rgba(255,255,255,.25);box-shadow:0 25px 80px rgba(0,0,0,.75),inset 0 1px 0 rgba(255,255,255,.16)}
   .composer-menu{background:rgba(30,30,32,.96);box-shadow:0 26px 80px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.1)}
+  .update-notice{background:rgba(20,20,22,.9);box-shadow:0 24px 80px rgba(0,0,0,.72),inset 0 1px 0 rgba(255,255,255,.12)}
   .attachment-chip{background:rgba(45,45,48,.76)}.user-bubble{background:#252527}.turn-error{color:#ff8178}
   @media(max-width:640px){.composer-menu{background:#141416;box-shadow:0 30px 90px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.1)}}
 }
