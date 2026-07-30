@@ -28,7 +28,8 @@ def set_active_packet(packet: dict[str, Any]) -> None:
 def _guard() -> None:
     global _TOOL_CALLS
     _TOOL_CALLS += 1
-    if _TOOL_CALLS > 8:
+    limit = int(_ACTIVE_PACKET.get("budget", {}).get("max_tool_calls", 4))
+    if _TOOL_CALLS > limit:
         raise RuntimeError("maintenance tool-call budget exhausted")
 
 

@@ -81,6 +81,8 @@ def _content(packet: dict[str, Any]) -> list[dict[str, Any]]:
             "A video may be listed in native_video_evidence_ids only if you actually inspected its video_url content.",
             "The packet text_context already contains bounded evidence excerpts selected by the deterministic harness.",
             "Do not call a read tool when text_context already contains the required evidence; prefer one final submit_maintenance_plan or finish_no_change call.",
+            "Never emit patch_main or patch_section unless the packet includes the exact target revision, previous block hash, and complete replaceable block content.",
+            "Keep the complete maintenance plan below 1200 output tokens.",
         ],
         "packet": {key: value for key, value in packet.items() if key != "media"},
     }

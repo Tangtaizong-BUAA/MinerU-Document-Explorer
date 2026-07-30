@@ -365,7 +365,7 @@ export class ProjectRuntime {
       base_revisions: { knowledge_revision: pointer?.knowledge_revision ?? "legacy", topology_revision: pointer?.topology_revision ?? "legacy", index_revision: pointer?.index_revision ?? "unbuilt" },
       evidence_refs: evidenceRefs, candidate_section_refs: candidateSectionRefs,
       open_conflict_refs: openConflicts, text_context: hydratedContext, media: (input.media ?? []).slice(0, 12),
-      budget: { max_tool_calls: 8, max_cumulative_input_tokens: 12000, max_context_tokens_per_step: 6000, max_cumulative_output_tokens: 3000, max_sections: 6, max_evidence_units: 40, max_multimodal_assets: 12, max_cost_usd: Number(process.env.CYJ_MAINTENANCE_MAX_COST_USD ?? "0.50") },
+      budget: { max_tool_calls: 4, max_cumulative_input_tokens: 12000, max_context_tokens_per_step: 6000, max_cumulative_output_tokens: 3000, max_sections: 6, max_evidence_units: 40, max_multimodal_assets: 12, max_cost_usd: Number(process.env.CYJ_MAINTENANCE_MAX_COST_USD ?? "0.50") },
       egress_policy: { maximum_confidentiality: "internal", provider: "alibaba_model_studio", region: process.env.CYJ_DASHSCOPE_REGION ?? "cn-beijing" },
       ...(input.locked_user_resolution_ref ? { locked_user_resolution_ref: input.locked_user_resolution_ref } : {}),
     };
