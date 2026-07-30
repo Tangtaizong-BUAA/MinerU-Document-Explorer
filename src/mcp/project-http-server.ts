@@ -134,6 +134,17 @@ export async function startLightweightProjectHttpServer(
         json(res, 404, { error: "Not found" });
         return;
       }
+      // This endpoint returns each JSON-RPC result directly from the POST that
+      // initiated it.  It deliberately does not offer an inbound SSE stream.
+      // A 405 is the Streamable HTTP MCP signal for an optional SSE channel
+      // that is unavailable; AI SDK clients then keep the healthy POST session
+      // instead of treating a 400 response as a transport failure and retrying
+      // the same tool call.
+      if (req.method === "GET" || req.method === "HEAD") {
+        res.writeHead(405, { allow: "POST, DELETE" });
+        res.end();
+        return;
+      }
       const suppliedToken = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : "";
       const registeredPrincipal = suppliedToken && principalRegistry.length ? authenticatePrincipal(suppliedToken, principalRegistry) : null;
       const legacyAuthorized = bearerToken && suppliedToken === bearerToken;

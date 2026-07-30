@@ -47,6 +47,15 @@ async function initialize(server: LightweightProjectHttpHandle) {
 }
 
 describe("lightweight project-only HTTP MCP", () => {
+  test("declines optional inbound SSE with the standard POST-only response", async () => {
+    const server = await start("project-read");
+    const response = await fetch(`http://127.0.0.1:${server.port}/mcp`, {
+      headers: { authorization: "Bearer test-token", accept: "text/event-stream" },
+    });
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("POST, DELETE");
+  });
+
   test("maps anonymous sessions to project-contribute while preserving authenticated resolver access", async () => {
     const root = await mkdtemp(join(tmpdir(), "cyj-lightweight-anonymous-")); roots.push(root);
     const server = await startLightweightProjectHttpServer({
