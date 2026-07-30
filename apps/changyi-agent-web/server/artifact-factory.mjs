@@ -11,14 +11,18 @@ import {
   WidthType,
 } from "docx";
 import JSZip from "jszip";
+import PDFDocument from "pdfkit";
 import pptxgen from "pptxgenjs";
+import { fileURLToPath } from "node:url";
 import { tool } from "ai";
 import { z } from "zod";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PDF_MIME = "application/pdf";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const MAX_BINARY_BYTES = 8 * 1024 * 1024;
+const PDF_FONT_PATH = fileURLToPath(new URL("./assets/NotoSansCJKsc-Regular.otf", import.meta.url));
 
 const filenameSchema = z.string().min(1).max(120);
 const workIdSchema = z.string().min(1).max(160);
@@ -183,6 +187,98 @@ export async function generateDocx(spec) {
   return Buffer.from(await Packer.toBuffer(document));
 }
 
+function pdfPageBreak(document, neededHeight = 40) {
+  if (document.y + neededHeight > document.page.height - 68) document.addPage();
+}
+
+function pdfTable(document, table) {
+  const headers = table.headers;
+  const rows = [headers, ...table.rows];
+  const pageWidth = document.page.width - document.page.margins.left - document.page.margins.right;
+  const columnWidth = pageWidth / headers.length;
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    document.font("NotoSansSC").fontSize(9);
+    const values = headers.map((_, columnIndex) => {
+      const value = normalizeCell(row[columnIndex]);
+      return value.length > 600 ? `${value.slice(0, 599)}…` : value;
+    });
+    const rowHeight = Math.max(30, ...values.map((value) => document.heightOfString(value || " ", { width: columnWidth - 14, lineGap: 2 }) + 14));
+    pdfPageBreak(document, rowHeight + 4);
+    const y = document.y;
+    values.forEach((value, columnIndex) => {
+      const x = document.page.margins.left + columnIndex * columnWidth;
+      document.save().fillColor(rowIndex === 0 ? "#202124" : "#ffffff").rect(x, y, columnWidth, rowHeight).fill().restore();
+      document.save().strokeColor("#d9dadd").lineWidth(0.6).rect(x, y, columnWidth, rowHeight).stroke().restore();
+      document.fillColor(rowIndex === 0 ? "#ffffff" : "#222326").fontSize(9).text(value, x + 7, y + 7, { width: columnWidth - 14, lineGap: 2 });
+    });
+    document.y = y + rowHeight;
+  }
+  document.x = document.page.margins.left;
+  document.moveDown(0.8);
+}
+
+export async function generatePdf(spec) {
+  const document = new PDFDocument({
+    size: "A4",
+    margins: { top: 58, right: 58, bottom: 58, left: 58 },
+    bufferPages: true,
+    info: {
+      Title: spec.title,
+      Author: spec.author || "长翼久安知识库",
+      Subject: "长翼久安项目产物",
+      Creator: "长翼久安线上 Agent",
+    },
+  });
+  document.registerFont("NotoSansSC", PDF_FONT_PATH);
+  const chunks = [];
+  const completed = new Promise((resolve, reject) => {
+    document.on("data", (chunk) => chunks.push(chunk));
+    document.on("end", () => resolve(Buffer.concat(chunks)));
+    document.on("error", reject);
+  });
+
+  document.font("NotoSansSC").fillColor("#121316").fontSize(27).text(spec.title, { lineGap: 5 });
+  if (spec.subtitle) document.moveDown(0.45).fillColor("#666970").fontSize(12).text(spec.subtitle, { lineGap: 3 });
+  document.moveDown(0.9).strokeColor("#202124").lineWidth(1.2).moveTo(document.page.margins.left, document.y).lineTo(document.page.width - document.page.margins.right, document.y).stroke();
+  document.moveDown(1.2);
+
+  for (const section of spec.sections) {
+    if (section.heading) {
+      const size = [19, 15.5, 13][section.level - 1];
+      pdfPageBreak(document, size * 2.5);
+      document.x = document.page.margins.left;
+      document.moveDown(section.level === 1 ? 0.8 : 0.45).fillColor("#17181b").fontSize(size).text(section.heading, { lineGap: 3 });
+      document.moveDown(0.45);
+    }
+    for (const paragraph of section.paragraphs || []) {
+      document.x = document.page.margins.left;
+      document.fillColor("#292b30").fontSize(10.8).text(paragraph, { align: "justify", lineGap: 5 });
+      document.moveDown(0.72);
+    }
+    for (const bullet of section.bullets || []) {
+      pdfPageBreak(document, 28);
+      const y = document.y;
+      document.fillColor("#5c65d6").circle(document.page.margins.left + 3, y + 6, 2).fill();
+      document.fillColor("#292b30").fontSize(10.8).text(bullet, document.page.margins.left + 14, y, { width: document.page.width - document.page.margins.left - document.page.margins.right - 14, lineGap: 4 });
+      document.moveDown(0.42);
+    }
+    for (const table of section.tables || []) pdfTable(document, table);
+  }
+
+  const range = document.bufferedPageRange();
+  for (let index = range.start; index < range.start + range.count; index += 1) {
+    document.switchToPage(index);
+    document.page.margins.bottom = 0;
+    const footerY = document.page.height - 36;
+    document.save().strokeColor("#dedfe2").lineWidth(0.5).moveTo(58, footerY - 10).lineTo(document.page.width - 58, footerY - 10).stroke().restore();
+    document.fillColor("#81838a").fontSize(8.5).text("长翼久安知识库", 58, footerY, { lineBreak: false });
+    document.text(`${index - range.start + 1} / ${range.count}`, document.page.width - 108, footerY, { width: 50, align: "right", lineBreak: false });
+  }
+  document.end();
+  return completed;
+}
+
 export async function generatePptx(spec) {
   const presentation = new pptxgen();
   presentation.layout = "LAYOUT_WIDE";
@@ -338,6 +434,11 @@ export function createArtifactTools(mcpClient) {
       description: "生成并持久化正式 Word DOCX 文件。适用于项目书、报告、函件、总结、方案和其他正式文本。工具内部完成二进制生成与上传，不要再调用普通资源发布工具重复上传。必须传入已建立的 work_id。",
       inputSchema: docxSchema,
       execute: async (input) => publishBinary(mcpClient, input, await generateDocx(input), DOCX_MIME, ".docx", "document"),
+    }),
+    create_pdf: tool({
+      description: "生成并持久化排版完整、可直接下载的中文 PDF 文件。用户明确要求 PDF，或交付物需要固定版式时优先使用；不得先生成 Markdown 或 DOCX 让用户自行转换。工具内部嵌入中文字体并完成二进制上传。必须传入已建立的 work_id。",
+      inputSchema: docxSchema,
+      execute: async (input) => publishBinary(mcpClient, input, await generatePdf(input), PDF_MIME, ".pdf", "document"),
     }),
     create_pptx: tool({
       description: "生成并持久化可编辑的 PowerPoint PPTX 文件。适用于汇报、答辩、路演和展示。每页保持一个核心主题，工具内部完成二进制生成与上传。必须传入已建立的 work_id。",

@@ -49,5 +49,6 @@ References: `Prototype.png`, `codex-clipboard-55f8f096-3c15-44ee-b7d9-4e1b74de0e
 - The 44,486,482-byte answer-deck PDF passed the 80MB session boundary and rendered its first page as visual context without entering the knowledge base.
 - DOCX extraction, session isolation, deletion, expiration semantics and non-artifact staging passed automated tests.
 - Durable large-file promotion uses 4MB chunks and server-side SHA-256 verification before an Artifact is created.
+- Direct PDF output re-opened as one A4 page, preserved extractable Chinese text, and passed rendered PNG inspection for title hierarchy, line wrapping, bullets, table borders, footer, page numbering, clipping and blank-page absence.
 
 final result: passed

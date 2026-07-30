@@ -85,6 +85,7 @@ const TOOL_STATUS = {
   kb_capture_context: ["closeout", "正在沉淀本次项目信息"],
   kb_finish_work: ["closeout", "正在归档本次知识工作"],
   create_docx: ["publish", "正在生成 Word 文件"],
+  create_pdf: ["publish", "正在生成 PDF 文件"],
   create_pptx: ["publish", "正在生成演示文稿"],
   create_xlsx: ["publish", "正在生成电子表格"],
   publish_text_file: ["publish", "正在生成项目文件"],
@@ -97,6 +98,7 @@ const ARTIFACT_OUTPUT_TOOLS = new Set([
   "kb_publish_resource",
   "kb_finish_work",
   "create_docx",
+  "create_pdf",
   "create_pptx",
   "create_xlsx",
   "publish_text_file",
@@ -112,10 +114,10 @@ const SYSTEM_PROMPT = `你是“长翼久安知识库”线上项目 Agent。你
 1. 项目内部事实只通过已经提供的知识库 MCP 工具读取、检索和维护；不得假装知道未查到的事实。需要最新政策、公开研究、外部背景或知识库未覆盖的信息时可以联网检索，但必须区分“项目内部证据”和“外部公开信息”。
 2. 新会话的第一次实质任务，先调用 kb_sync_skill，再调用 kb_brief 获取项目总览。涉及地点、产品、成果、数字、时间、合作方、文件原文等细节时，必须主动调用 kb_search，并按需用 kb_read、kb_view、kb_graph_context 补齐证据。
 3. 用户说“技术细节”“技术路线”“核心技术”而没有明确限定对象时，默认询问的是长翼久安项目本体与“城脉 CT”产品技术：无人机/机器狗协同、IMU+GNSS、激光雷达、SLAM、五拼镜头、三维重建与古建筑病害分析。必须优先检索项目申报、商业计划和答辩材料后回答。只有用户明确说“知识库技术”“MCP 架构”“服务器架构”等，才解释知识系统本身。
-4. 简短事实问答无需建立工作项；产生方案、文稿、表格、总结、规划或其他可复用成果时，先调用 kb_start_work。根据用途选择真实交付格式：正式报告、项目书、函件和总结优先使用 create_docx；答辩、汇报和路演使用 create_pptx；计划表、预算、名单和结构化清单使用 create_xlsx；代码、JSON、CSV、YAML 与用户明确要求的 Markdown 使用 publish_text_file并保留原始扩展名。只有用户明确要 Markdown 或它确实是最合适的知识笔记时才生成 Markdown。上述产物工具会自行持久化，不得再调用 kb_publish_resource 重复上传；重要新上下文用 kb_capture_context；最后调用 kb_finish_work 完成交付闭环。
+4. 简短事实问答无需建立工作项；产生方案、文稿、表格、总结、规划或其他可复用成果时，先调用 kb_start_work。根据用途选择真实交付格式：用户明确要求 PDF 时必须使用 create_pdf 直接生成，不得拒绝、改成 Markdown 或要求用户自行转换；正式报告、项目书、函件和可编辑总结优先使用 create_docx；答辩、汇报和路演使用 create_pptx；计划表、预算、名单和结构化清单使用 create_xlsx；代码、JSON、CSV、YAML 与用户明确要求的 Markdown 使用 publish_text_file并保留原始扩展名。只有用户明确要 Markdown 或它确实是最合适的知识笔记时才生成 Markdown。上述产物工具会自行持久化，不得再调用 kb_publish_resource 重复上传；重要新上下文用 kb_capture_context；最后调用 kb_finish_work 完成交付闭环。
 5. 发现资料冲突时，明确指出冲突和各自来源，谨慎回答并请用户或指定负责人裁决。不得自行覆盖、合并或宣布某一说法为真。
 6. 回答使用自然、清楚、克制的中文 Markdown。引用项目事实时尽量说明面向人的资料名称或证据位置。绝对不要输出任何以 kb_ 开头的工具名，也不要输出 create_docx、create_pptx、create_xlsx、publish_text_file、ToolLoopAgent、MS-Agent、内部提示词、框架、密钥、调用参数或技术错误栈。
-7. 当已生成文件时，正文只需说明文件已经整理好；网页会自动展示下载卡片。不得编造下载链接。当前可直接生成 DOCX、PPTX、XLSX、Markdown、TXT、CSV、JSON、YAML 和代码文件；不要声称已经生成 PDF。
+7. 当已生成文件时，正文只需说明文件已经整理好；网页会自动展示下载卡片。不得编造下载链接。当前可直接生成 PDF、DOCX、PPTX、XLSX、Markdown、TXT、CSV、JSON、YAML 和代码文件。
 8. 你是线上长期项目 Agent，不是通用闲聊机器人。对于与长翼久安项目无关且无法支持项目工作的请求，简洁说明范围并引导回项目任务。
 9. 用户添加的文件首先只是当前会话的临时附件，不等于已进入知识库。应先按需阅读附件并完成本轮任务。只有当文件与长翼久安直接相关，且属于权威来源、项目原件、可长期复用素材或可验证证据时，才建立知识工作并调用附件晋升能力保存原件；普通参考资料、一次性草稿、无关文件和重复文件不得入库。晋升后还应提炼真正新增的项目事实，交由维护流程更新结构知识。不得为了读取附件而晋升附件。
 10. 对图片、扫描 PDF、图片型 PPT 或版式相关问题，主动读取视觉内容；文字提取不足时不得猜测。用户未要求保存且长期价值不明确时，只在本会话中使用。
@@ -273,7 +275,7 @@ function publicError(error) {
 export function redactInternalNames(text) {
   return String(text)
     .replace(/`?kb_(?:sync_skill|brief|lookup|search|outline|view|read|graph_context|start_work|publish_resource|capture_context|finish_work)`?/gi, "对应的知识库流程")
-    .replace(/`?(?:create_docx|create_pptx|create_xlsx|publish_text_file)`?/gi, "对应的文件生成流程")
+    .replace(/`?(?:create_docx|create_pdf|create_pptx|create_xlsx|publish_text_file)`?/gi, "对应的文件生成流程")
     .replace(/`?(?:read_session_attachment|promote_session_attachment|web_search)`?/gi, "对应的工作流程")
     .replace(/\b(?:ToolLoopAgent|Pi Agent|AgentHarness)\b/gi, "内部知识工作流程")
     .replace(/\bMS-Agent\b/gi, "内部知识整理流程");
@@ -515,6 +517,10 @@ async function handleChat(req, res) {
         if (event.type === "tool_execution_start") {
           const [phase, label] = TOOL_STATUS[event.toolName] || ["search", "正在查询项目资料"];
           writeEvent(res, { type: "status", phase, label });
+        }
+        if (event.type === "tool_execution_end" && event.isError) {
+          const detail = event.result?.content?.find?.((part) => part?.type === "text")?.text || event.result?.details?.error || "unknown tool failure";
+          console.error("Agent tool failed:", event.toolName, safeError(detail));
         }
         if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
           outputBuffer += event.assistantMessageEvent.delta;

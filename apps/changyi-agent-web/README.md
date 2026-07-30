@@ -7,10 +7,10 @@
 MCP 工具，并通过百炼官方联网搜索补齐公开时效信息。Pi 的 Shell、代码编辑和
 任意服务器文件访问均未开放。
 
-产物环境内置确定性文档工厂，可直接生成并持久化 DOCX、PPTX、XLSX、
-Markdown、TXT、CSV、JSON、YAML 和代码文件。Office 二进制与 base64 上传
-全部在服务器工具内部完成，不进入模型上下文。PDF 尚未开放，避免在没有
-中文字体与版式转换验收的情况下提供伪支持。
+产物环境内置确定性文档工厂，可直接生成并持久化 PDF、DOCX、PPTX、XLSX、
+Markdown、TXT、CSV、JSON、YAML 和代码文件。PDF 使用随发布包固定的 Noto
+Sans CJK SC 字体直接排版，不依赖 Word、WPS、LibreOffice 或服务器系统字体；
+Office 二进制与 base64 上传全部在服务器工具内部完成，不进入模型上下文。
 
 交互支持 Auto、Fable 5、qwen3.8max、qwen3.7-flash 四个选择；
 Fable 5 与 qwen3.8max 优先走 Token Plan 的 `qwen3.8-max-preview`，

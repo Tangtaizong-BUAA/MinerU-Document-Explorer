@@ -21,3 +21,4 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - A user-added file is a temporary, session-scoped Agent attachment first; it must never be persisted to the knowledge base merely because it was selected, dropped, or pasted.
 - The Agent may promote an attachment to a durable Artifact only after reading it and identifying direct, reusable, long-term value for the 长翼久安 project; structural knowledge maintenance remains a separate closeout step.
 - File intake must support picker selection, page-level drag and drop, and clipboard file paste with the same status and error behavior.
+- User-requested PDF deliverables are generated directly by the deterministic PDF factory with its bundled Chinese font; never fall back to Markdown or ask the user to convert DOCX manually.
