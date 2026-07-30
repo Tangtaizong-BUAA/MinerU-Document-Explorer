@@ -1,0 +1,31 @@
+[Unit]
+Description=Changyi Jiuan online knowledge Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cyj-agent
+Group=cyj-agent
+WorkingDirectory=/opt/changyi-jiuan-agent-web/current
+Environment=NODE_ENV=production
+Environment=CYJ_AGENT_HOST=127.0.0.1
+Environment=CYJ_AGENT_PORT=8801
+Environment=CYJ_AGENT_BASE_PATH=/cyj/agent
+EnvironmentFile=/etc/changyi-jiuan-agent-web.env
+ExecStart=/usr/local/bin/node server/index.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

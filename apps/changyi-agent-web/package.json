@@ -1,0 +1,28 @@
+{
+  "name": "changyi-agent-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "CYJ_AGENT_PORT=4174 node server/index.mjs",
+    "start": "node server/index.mjs",
+    "build": "vite build && node scripts/prepare-sites-build.mjs",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.mjs",
+    "test:sites": "node --test tests/sites-worker.test.mjs"
+  },
+  "dependencies": {
+    "@ai-sdk/mcp": "^2.0.19",
+    "@ai-sdk/openai-compatible": "^3.0.17",
+    "@phosphor-icons/react": "^2.1.10",
+    "@vitejs/plugin-react": "5.0.4",
+    "ai": "^7.0.42",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "vite": "6.4.2",
+    "zod": "^4.4.3"
+  }
+}
