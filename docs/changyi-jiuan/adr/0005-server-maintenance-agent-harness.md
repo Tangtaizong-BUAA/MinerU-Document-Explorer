@@ -100,8 +100,8 @@ report_insufficient_evidence
 - 需要自行实现持久队列、revision manifest、validator 和补偿回滚；
 - 0.4 的直接文档写工具需要兼容迁移；
 - 需要为项目负责人和指定负责人发放独立 resolver capability；团队共享 token 永远不得获得该能力；
-- 需要确认现有百炼 Workspace/API Key 是否属于北京地域；
-- `qwen3.7-flash` 仍需在最后提供 API Key 后完成 tool-calling、图片与原生视频兼容性 live gate；其余门禁不得依赖 Key。
+- 已复用 ArgonType 受管环境中的 Key 完成北京区 live gate；Key 不进入仓库、知识文档或查询服务；
+- `qwen3.7-flash` tool-calling、图片、原生视频和完整 MS-Agent Worker 已通过，`qwen3-vl-embedding` 文本/图片/视频向量已通过；后续变更 endpoint、地域、Key 或模型必须重跑。
 
 ## 发布门禁
 

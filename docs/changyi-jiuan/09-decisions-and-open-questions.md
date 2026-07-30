@@ -133,10 +133,9 @@
 
 ### Q-010：现有百炼 Workspace 地域
 
-- 需要确认：当前准备使用的百炼 Workspace/API Key 是否属于华北 2（北京，`cn-beijing`）。
-- 原因：`qwen3-vl-embedding` 当前官方模型表在北京地域，API Key、业务空间 endpoint 和模型列表不能跨地域混用。
-- 当前目标：北京业务空间专属 endpoint；region、endpoint、API dialect、模型 ID 和 key reference 作为一个版本化配置 tuple。
-- 若不是北京：需由用户选择新建北京 Workspace，或重新评测其他地域可用模型；不得在代码里静默降级。
+- 状态：Resolved by live gate（2026-07-29）。
+- 结论：复用 ArgonType 受管环境中的既有 `QWEN_API_KEY`，通过北京区 OpenAI-compatible endpoint 实测 `qwen3.7-flash` 和 `qwen3-vl-embedding` 成功；Key 明文不复制到仓库、知识文档或查询服务。
+- 配置约束：region、endpoint、API dialect、模型 ID 和 key reference 仍作为一个版本化 tuple。未来若切换业务空间专属 endpoint、Key 或地域，必须重跑同一 live gate，不得静默拼接或降级。
 
 ### Q-011：私有原视频与原始音频边界
 

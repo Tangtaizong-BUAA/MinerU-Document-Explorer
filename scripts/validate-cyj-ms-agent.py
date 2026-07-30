@@ -3,11 +3,15 @@
 
 import asyncio
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "src/backends/python/cyj_maintenance_agent.yaml"
+RUNTIME_DIR = tempfile.TemporaryDirectory(prefix="cyj-ms-agent-validator-")
+os.chdir(RUNTIME_DIR.name)
 sys.path.insert(0, str(CONFIG.parent))
 
 from ms_agent import LLMAgent

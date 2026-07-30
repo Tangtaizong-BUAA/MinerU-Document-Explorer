@@ -1,7 +1,7 @@
 # 长翼久安知识库定向改造规划
 
-> 文书状态：0.5.0 Implemented / offline verified
-> 本地构建版本：0.5.0；当前线上部署仍为 0.4.0，等待 API Key live gate 与受控发布
+> 文书状态：0.5.0 Implemented / Alibaba live gate verified
+> 本地构建版本：0.5.0；当前线上部署仍为 0.4.0，等待受控生产发布
 > 上游基线：`opendatalab/MinerU-Document-Explorer`
 > 基线提交：`a7e9c6cc25b7edbf4ebd35aea8e270523a8a3e40`
 > 本地工作分支：`feature/changyi-jiuan-kb`
@@ -36,10 +36,10 @@
 | [11-v0.5-product-technology-stack.md](11-v0.5-product-technology-stack.md) | 0.5.0 产品边界、技术栈、多模态检索与维护 Harness | Implemented baseline |
 | [12-client-deployment.md](12-client-deployment.md) | 三客户端、家庭主节点与阿里云只读回退部署 | Active |
 | [specs/domain-model.v0.1.yaml](specs/domain-model.v0.1.yaml) | 机器可读领域模型草案 | Draft |
-| [specs/domain-model.v0.5.yaml](specs/domain-model.v0.5.yaml) | 0.5 Evidence Unit、冲突、维护计划与 revision/snapshot 契约 | Implemented; live gate pending |
+| [specs/domain-model.v0.5.yaml](specs/domain-model.v0.5.yaml) | 0.5 Evidence Unit、冲突、维护计划与 revision/snapshot 契约 | Implemented; live verified |
 | [specs/mcp-surface.v0.1.yaml](specs/mcp-surface.v0.1.yaml) | 机器可读 MCP 门面草案 | Draft |
-| [specs/mcp-surface.v0.5.yaml](specs/mcp-surface.v0.5.yaml) | 0.5 MCP profile、写入收口与冲突 capability | Implemented; live gate pending |
-| [reports/v0.5-offline-implementation.md](reports/v0.5-offline-implementation.md) | 0.5 代码、离线验证、部署包与最后 live gate | Verified offline |
+| [specs/mcp-surface.v0.5.yaml](specs/mcp-surface.v0.5.yaml) | 0.5 MCP profile、写入收口与冲突 capability | Implemented; live verified |
+| [reports/v0.5-offline-implementation.md](reports/v0.5-offline-implementation.md) | 0.5 代码、离线验证、阿里 live gate 与发布状态 | Live verified |
 | [reports/phase-0-baseline.md](reports/phase-0-baseline.md) | Fork、构建与上游测试基线验证报告 | Verified |
 
 ## 架构决策记录

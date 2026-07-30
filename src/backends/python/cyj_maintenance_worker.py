@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,11 @@ HARNESS_VERSION = "0.5.0"
 PROMPT_VERSION = "cyj-maintenance/0.5.0"
 TOOL_SCHEMA_VERSION = "cyj-maintenance-tools/0.5.0"
 DEFAULT_MODEL = "qwen3.7-flash"
+
+# Keep framework scratch history/logs outside the project and remove them when
+# this isolated worker exits. Canonical state is supplied only through stdio.
+_RUNTIME_DIR = tempfile.TemporaryDirectory(prefix="cyj-ms-agent-")
+os.chdir(_RUNTIME_DIR.name)
 
 
 def _response(request_id: str, *, result: Any = None, error: str | None = None) -> dict[str, Any]:
@@ -89,7 +95,11 @@ def _content(packet: dict[str, Any]) -> list[dict[str, Any]]:
 async def _live_plan(packet: dict[str, Any], options: dict[str, Any]) -> dict[str, Any]:
     api_key = os.environ.get("DASHSCOPE_API_KEY", "")
     if not api_key:
-        raise RuntimeError("DASHSCOPE_API_KEY is required only for the final live gate")
+        raise RuntimeError("DASHSCOPE_API_KEY is required for live maintenance mode")
+    # MS-Agent writes detailed user messages at INFO by default. The project
+    # worker keeps durable audit in the Harness instead and limits framework
+    # logs to errors so packet content is not duplicated into a local log file.
+    os.environ.setdefault("LOG_LEVEL", "ERROR")
     try:
         from ms_agent import LLMAgent
         from ms_agent.config import Config
@@ -100,13 +110,18 @@ async def _live_plan(packet: dict[str, Any], options: dict[str, Any]) -> dict[st
     config_path = Path(__file__).with_name("cyj_maintenance_agent.yaml")
     if str(config_path.parent) not in sys.path:
         sys.path.insert(0, str(config_path.parent))
-    from tools.cyj_maintenance import set_active_packet, submitted_plan
+    # MS-Agent loads local plugins by their top-level filename. Import the exact
+    # same module name here so packet state is not split across two modules.
+    tools_path = config_path.parent / "tools"
+    if str(tools_path) not in sys.path:
+        sys.path.insert(0, str(tools_path))
+    from cyj_maintenance import set_active_packet, submitted_plan, terminal_error
     set_active_packet(packet)
     config = Config.from_task(str(config_path))
     config.llm.model = options.get("model", DEFAULT_MODEL)
     config.llm.service = "dashscope"
     config.llm.dashscope_api_key = api_key
-    config.llm.modelscope_base_url = options.get(
+    config.llm.dashscope_base_url = options.get(
         "base_url", os.environ.get("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
     )
     config.generation_config.stream = False
@@ -116,10 +131,23 @@ async def _live_plan(packet: dict[str, Any], options: dict[str, Any]) -> dict[st
     text_chars = sum(len(item.get("text", "")) for item in content if item.get("type") == "text")
     if text_chars // 4 > packet["budget"]["max_context_tokens_per_step"]:
         raise RuntimeError("maintenance step context budget exceeded before model call")
-    messages = [Message(role="user", content=content)]
+    # MS-Agent 1.6 history handling expects the standard [system, user] pair.
+    messages = [
+        Message(
+            role="system",
+            content=(
+                "You are the Changyi Jiuan knowledge maintenance planner. "
+                "Use only the registered maintenance tools, never answer users, "
+                "and never invent, hide, or resolve project conflicts."
+            ),
+        ),
+        Message(role="user", content=content),
+    ]
     result = await agent.run(messages=messages)
     if not result:
         raise RuntimeError("MS-Agent returned no messages")
+    if terminal_error() is not None:
+        raise RuntimeError(f"maintenance evidence insufficient: {terminal_error()}")
     prompt_tokens = sum(int(getattr(message, "prompt_tokens", 0) or 0) for message in result)
     completion_tokens = sum(int(getattr(message, "completion_tokens", 0) or 0) for message in result)
     if prompt_tokens > packet["budget"]["max_cumulative_input_tokens"]:
