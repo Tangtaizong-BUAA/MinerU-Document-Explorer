@@ -322,15 +322,49 @@ export class ProjectRuntime {
     evidence_refs?: string[]; candidate_section_refs?: string[]; media?: ChangePacket["media"]; locked_user_resolution_ref?: string;
   }): Promise<string> {
     const pointer = await this.revisionStore.pointer();
-    const records = (await this.records()).map(item => item.record);
+    const items = await this.records();
+    const records = items.map(item => item.record);
     const openConflicts = records.filter(record => record.project_id === input.project_id && record.type === "conflict" && ["open", "resolution_pending"].includes(record.status)).map(record => record.id).slice(0, 30);
+    const evidenceRefs = uniqueStrings(input.evidence_refs ?? []).slice(0, 40);
+    const evidenceParts: string[] = [];
+    let evidenceChars = 0;
+    for (const ref of evidenceRefs) {
+      const item = items.find(candidate => candidate.record.id === ref);
+      if (!item) continue;
+      let content = item.body || (typeof item.record.statement === "string" ? item.record.statement : "");
+      if (item.record.type === "artifact" && typeof item.record.normalized_markdown_path === "string") {
+        content = await readFile(join(this.root, item.record.normalized_markdown_path), "utf8").catch(() => content);
+      }
+      if (!content.trim()) continue;
+      const remaining = 12_000 - evidenceChars;
+      if (remaining <= 0) break;
+      const excerpt = content.slice(0, Math.min(remaining, 6_000));
+      evidenceParts.push(`## Evidence ${ref}\nTitle: ${item.record.title}\nType: ${item.record.type}\n\n${excerpt}`);
+      evidenceChars += excerpt.length;
+    }
+    const routingText = `${input.text_context}\n${evidenceParts.join("\n")}`.toLowerCase();
+    const scoreSection = (record: KnowledgeRecord): number => {
+      const seed = `${record.title} ${String(record.summary ?? "")} ${String(record.key ?? "")}`.toLowerCase();
+      const terms = new Set(seed.split(/[^\p{L}\p{N}]+/u).filter(term => term.length >= 2));
+      for (let index = 0; index + 1 < record.title.length; index += 1) terms.add(record.title.slice(index, index + 2).toLowerCase());
+      return [...terms].reduce((score, term) => score + (routingText.includes(term) ? Math.min(term.length, 8) : 0), 0);
+    };
+    const inferredSections = records
+      .filter(record => record.project_id === input.project_id && record.type === "knowledge_section")
+      .map(record => ({ id: record.id, score: scoreSection(record), linked: asStrings(record.artifact_refs).some(ref => evidenceRefs.includes(ref)) }))
+      .filter(candidate => candidate.linked || candidate.score > 0)
+      .sort((a, b) => Number(b.linked) - Number(a.linked) || b.score - a.score || a.id.localeCompare(b.id))
+      .slice(0, 2)
+      .map(candidate => candidate.id);
+    const candidateSectionRefs = uniqueStrings([...(input.candidate_section_refs ?? []), ...inferredSections]).slice(0, 6);
+    const hydratedContext = [input.text_context, ...evidenceParts].join("\n\n").slice(0, 18_000);
     const packetId = `packet:cyj:${digest(input.idempotency_key).slice(0, 24)}`;
     const packet: ChangePacket = {
       schema: "cyj-change-packet/v1", packet_id: packetId, project_id: input.project_id, idempotency_key: input.idempotency_key,
       trigger: input.trigger,
       base_revisions: { knowledge_revision: pointer?.knowledge_revision ?? "legacy", topology_revision: pointer?.topology_revision ?? "legacy", index_revision: pointer?.index_revision ?? "unbuilt" },
-      evidence_refs: uniqueStrings(input.evidence_refs ?? []).slice(0, 40), candidate_section_refs: uniqueStrings(input.candidate_section_refs ?? []).slice(0, 6),
-      open_conflict_refs: openConflicts, text_context: input.text_context.slice(0, 24_000), media: (input.media ?? []).slice(0, 12),
+      evidence_refs: evidenceRefs, candidate_section_refs: candidateSectionRefs,
+      open_conflict_refs: openConflicts, text_context: hydratedContext, media: (input.media ?? []).slice(0, 12),
       budget: { max_tool_calls: 8, max_cumulative_input_tokens: 12000, max_context_tokens_per_step: 6000, max_cumulative_output_tokens: 3000, max_sections: 6, max_evidence_units: 40, max_multimodal_assets: 12, max_cost_usd: Number(process.env.CYJ_MAINTENANCE_MAX_COST_USD ?? "0.50") },
       egress_policy: { maximum_confidentiality: "internal", provider: "alibaba_model_studio", region: process.env.CYJ_DASHSCOPE_REGION ?? "cn-beijing" },
       ...(input.locked_user_resolution_ref ? { locked_user_resolution_ref: input.locked_user_resolution_ref } : {}),

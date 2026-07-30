@@ -382,6 +382,10 @@ describe("ProjectRuntime", () => {
         expect(first.searchable).toBe(true);
         expect((await rt.search("Pianguan local liaison"))[0]!.record.id).toBe(first.artifact_id);
         expect((await rt.readResource(first.resource_uri)).text).toContain("Pianguan survey");
+        const maintenance = await rt.maintenanceQueue.lease("test:resource-evidence");
+        expect(maintenance?.packet.text_context).toContain("The Pianguan survey requires a local liaison.");
+        expect(maintenance?.packet.evidence_refs).toEqual([first.artifact_id]);
+        await rt.maintenanceQueue.complete(maintenance!.packet.packet_id, "test:resource-evidence");
 
         await rt.finishWork({ work_id: workId, outcome: "completed", summary: "Note captured", result_hash: "resource-closeout-1", actor: ACTOR });
         const work = (await rt.get(workId))!.record;

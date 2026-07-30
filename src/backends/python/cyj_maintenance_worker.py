@@ -79,6 +79,8 @@ def _content(packet: dict[str, Any]) -> list[dict[str, Any]]:
             "Never modify, hide, unlink, or resolve an existing conflict.",
             "Use register_conflict or observe_conflict when evidence disagrees.",
             "A video may be listed in native_video_evidence_ids only if you actually inspected its video_url content.",
+            "The packet text_context already contains bounded evidence excerpts selected by the deterministic harness.",
+            "Do not call a read tool when text_context already contains the required evidence; prefer one final submit_maintenance_plan or finish_no_change call.",
         ],
         "packet": {key: value for key, value in packet.items() if key != "media"},
     }
