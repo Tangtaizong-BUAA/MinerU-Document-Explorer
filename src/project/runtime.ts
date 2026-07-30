@@ -336,9 +336,9 @@ export class ProjectRuntime {
         content = await readFile(join(this.root, item.record.normalized_markdown_path), "utf8").catch(() => content);
       }
       if (!content.trim()) continue;
-      const remaining = 12_000 - evidenceChars;
+      const remaining = 8_000 - evidenceChars;
       if (remaining <= 0) break;
-      const excerpt = content.slice(0, Math.min(remaining, 6_000));
+      const excerpt = content.slice(0, Math.min(remaining, 4_000));
       evidenceParts.push(`## Evidence ${ref}\nTitle: ${item.record.title}\nType: ${item.record.type}\n\n${excerpt}`);
       evidenceChars += excerpt.length;
     }
@@ -357,7 +357,35 @@ export class ProjectRuntime {
       .slice(0, 2)
       .map(candidate => candidate.id);
     const candidateSectionRefs = uniqueStrings([...(input.candidate_section_refs ?? []), ...inferredSections]).slice(0, 6);
-    const hydratedContext = [input.text_context, ...evidenceParts].join("\n\n").slice(0, 18_000);
+    const documentParts: string[] = [];
+    const documentCandidates = items.filter(item => item.record.id === input.project_id || candidateSectionRefs.includes(item.record.id));
+    const headingCandidates: Array<{ score: number; text: string }> = [];
+    for (const item of documentCandidates) {
+      const lines = item.body.split("\n");
+      const headings = lines.map((line, index) => {
+        const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+        return match ? { index, level: match[1]!.length, title: match[2]! } : null;
+      }).filter((value): value is { index: number; level: number; title: string } => value !== null);
+      for (let index = 0; index < headings.length; index += 1) {
+        const heading = headings[index]!;
+        const next = headings.slice(index + 1).find(candidate => candidate.level <= heading.level);
+        const content = lines.slice(heading.index + 1, next?.index ?? lines.length).join("\n").trim();
+        if (!content || content.length > 4_000) continue;
+        const title = heading.title.toLowerCase();
+        let score = routingText.includes(title) ? 20 : 0;
+        for (let offset = 0; offset + 1 < title.length; offset += 1) if (routingText.includes(title.slice(offset, offset + 2))) score += 2;
+        if (score === 0) continue;
+        const expectedRevision = item.record.id === input.project_id ? String(item.record.main_revision ?? digest(item.body)) : String(item.record.revision_hash ?? digest(item.body));
+        headingCandidates.push({ score, text: `## Mutable document block\ntarget_ref: ${item.record.id}\nexpected_revision: ${expectedRevision}\nblock_key: heading:${heading.title}\nprevious_block_hash: ${digest(content)}\n\n${content}` });
+      }
+    }
+    let documentChars = 0;
+    for (const candidate of headingCandidates.sort((a, b) => b.score - a.score).slice(0, 4)) {
+      if (documentChars + candidate.text.length > 7_000) continue;
+      documentParts.push(candidate.text);
+      documentChars += candidate.text.length;
+    }
+    const hydratedContext = [input.text_context, ...evidenceParts, ...documentParts].join("\n\n").slice(0, 18_000);
     const packetId = `packet:cyj:${digest(input.idempotency_key).slice(0, 24)}`;
     const packet: ChangePacket = {
       schema: "cyj-change-packet/v1", packet_id: packetId, project_id: input.project_id, idempotency_key: input.idempotency_key,
@@ -1074,6 +1102,19 @@ export class ProjectRuntime {
     const requireRecord = (id: string) => { const item = working.get(id); if (!item) throw new Error(`Maintenance target not found: ${id}`); return item; };
     const patchBody = (body: string, blockKey: string, replacement: string): string => {
       if (blockKey === "document") return replacement.trimEnd() + "\n";
+      if (blockKey.startsWith("heading:")) {
+        const title = blockKey.slice("heading:".length);
+        const lines = body.split("\n");
+        const headingIndex = lines.findIndex(line => /^(#{1,6})\s+(.+?)\s*$/.exec(line)?.[2] === title);
+        if (headingIndex < 0) throw new Error(`Stable heading block not found: ${blockKey}`);
+        const level = /^(#{1,6})/.exec(lines[headingIndex]!)![1]!.length;
+        let end = lines.length;
+        for (let index = headingIndex + 1; index < lines.length; index += 1) {
+          const match = /^(#{1,6})\s+/.exec(lines[index]!);
+          if (match && match[1]!.length <= level) { end = index; break; }
+        }
+        return [...lines.slice(0, headingIndex + 1), "", replacement.trim(), "", ...lines.slice(end)].join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+      }
       const start = `<!-- kb:block ${blockKey} -->`;
       const end = `<!-- /kb:block ${blockKey} -->`;
       const from = body.indexOf(start); const to = body.indexOf(end);
@@ -1082,6 +1123,19 @@ export class ProjectRuntime {
     };
     const blockHash = (body: string, blockKey: string): string => {
       if (blockKey === "document") return digest(body);
+      if (blockKey.startsWith("heading:")) {
+        const title = blockKey.slice("heading:".length);
+        const lines = body.split("\n");
+        const headingIndex = lines.findIndex(line => /^(#{1,6})\s+(.+?)\s*$/.exec(line)?.[2] === title);
+        if (headingIndex < 0) throw new Error(`Stable heading block not found: ${blockKey}`);
+        const level = /^(#{1,6})/.exec(lines[headingIndex]!)![1]!.length;
+        let end = lines.length;
+        for (let index = headingIndex + 1; index < lines.length; index += 1) {
+          const match = /^(#{1,6})\s+/.exec(lines[index]!);
+          if (match && match[1]!.length <= level) { end = index; break; }
+        }
+        return digest(lines.slice(headingIndex + 1, end).join("\n").trim());
+      }
       const start = `<!-- kb:block ${blockKey} -->`; const end = `<!-- /kb:block ${blockKey} -->`;
       const from = body.indexOf(start); const to = body.indexOf(end);
       if (from < 0 || to < from) throw new Error(`Stable block not found: ${blockKey}`);

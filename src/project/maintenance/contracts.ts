@@ -104,7 +104,7 @@ export type ChangePacket = z.infer<typeof changePacketSchema>;
 export type MaintenancePlan = z.infer<typeof maintenancePlanSchema>;
 export type MaintenanceBudget = z.infer<typeof maintenanceBudgetSchema>;
 
-const PROTECTED_BLOCK = /(?:^|[-_])(conflicts?|global[-_]conflict|conflict[-_]refs?)(?:$|[-_])/i;
+const PROTECTED_BLOCK = /(?:^|[-_:])(conflicts?|global[-_]conflict|conflict[-_]refs?)(?:$|[-_:])|冲突/i;
 
 export function validateMaintenancePlan(packetInput: unknown, planInput: unknown): MaintenancePlan {
   const packet = changePacketSchema.parse(packetInput);

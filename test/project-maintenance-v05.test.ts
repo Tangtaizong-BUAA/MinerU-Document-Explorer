@@ -87,6 +87,21 @@ describe("0.5 maintenance security boundary", () => {
     expect(((await runtime.brief("project:cyj")).main_file as { markdown: string }).markdown).toBe(replacement);
   });
 
+  test("patches one exact Markdown heading block without rewriting the document", async () => {
+    const data = await root(); const runtime = new ProjectRuntime(data); await runtime.initialize();
+    await runtime.bootstrapProject({ project_id: "project:cyj", title: "Project", mission: "Maintain grounded project knowledge", actor: "ops" });
+    const started = await runtime.startWork({ project_id: "project:cyj", objective: "Seed stable heading blocks", expected_outputs: ["main"], acceptance_criteria: ["stable headings"], actor: "ops" });
+    const initial = await runtime.brief("project:cyj") as { main_file: { revision_hash: string } };
+    const seeded = await runtime.updateProjectMain({ project_id: "project:cyj", work_id: started.work_id, expected_revision: initial.main_file.revision_hash, change_summary: "Seed status blocks", actor: "ops", markdown: "# Project\n\n## Runtime status\n\nOld status.\n\n## Durable boundary\n\nKeep this text.\n" });
+    const pointer = (await runtime.revisionStore.pointer())!;
+    const input = packet(); input.evidence_refs = ["artifact:release"]; input.base_revisions.knowledge_revision = pointer.knowledge_revision; input.base_revisions.topology_revision = pointer.topology_revision;
+    const plan = validateMaintenancePlan(input, { schema: "cyj-maintenance-plan/v1", packet_id: input.packet_id, base_knowledge_revision: pointer.knowledge_revision, expected_topology_revision: pointer.topology_revision, prompt_version: MAINTENANCE_PROMPT_VERSION, tool_schema_version: MAINTENANCE_TOOL_SCHEMA_VERSION, operations: [{ op: "patch_main", patch: { target_ref: "project:cyj", expected_revision: seeded.revision_hash, block_key: "heading:Runtime status", previous_block_hash: createHash("sha256").update("Old status.").digest("hex"), replacement_markdown: "New grounded status.", evidence_refs: ["artifact:release"], reason: "Apply bounded release evidence" } }], native_video_evidence_ids: [] });
+    await runtime.applyMaintenancePlan(input, plan);
+    const body = ((await runtime.brief("project:cyj")).main_file as { markdown: string }).markdown;
+    expect(body).toContain("## Runtime status\n\nNew grounded status.");
+    expect(body).toContain("## Durable boundary\n\nKeep this text.");
+  });
+
   test("locks and applies an authorized conflict resolution without model-side arbitration", async () => {
     const data = await root(); const runtime = new ProjectRuntime(data); await runtime.initialize();
     await runtime.bootstrapProject({ project_id: "project:cyj", title: "Project", mission: "Maintain grounded project knowledge", actor: "ops" });
