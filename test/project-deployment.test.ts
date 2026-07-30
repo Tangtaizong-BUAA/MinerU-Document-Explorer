@@ -36,4 +36,14 @@ describe("Changyi Jiuan client deployment templates", () => {
     expect(service).toContain("memswap_limit: 768m");
     expect(service).not.toContain("mem_limit: 1536m");
   });
+
+  test("Alibaba standby runs the same lightweight runtime in read-only profile", async () => {
+    const unit = await readFile(join(root, "deploy", "systemd", "changyi-jiuan-mcp-standby.service"), "utf8");
+    expect(unit).toContain("Environment=CYJ_MCP_PROFILE=project-read");
+    expect(unit).toContain("Environment=CYJ_MCP_HOST=127.0.0.1");
+    expect(unit).toContain("Environment=CYJ_MCP_PORT=8794");
+    expect(unit).toContain("/opt/changyi-jiuan-mcp/current/dist/cli/project-mcp-http.js");
+    expect(unit).not.toContain("dist/cli/qmd.js mcp");
+    expect(unit).not.toContain("project-maintainer");
+  });
 });

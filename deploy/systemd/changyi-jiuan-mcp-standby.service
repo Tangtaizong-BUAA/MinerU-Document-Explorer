@@ -7,13 +7,15 @@ Wants=network-online.target
 Type=simple
 User=changyi-kb
 Group=changyi-kb
-WorkingDirectory=/opt/changyi-jiuan-mcp/app
+WorkingDirectory=/opt/changyi-jiuan-mcp/current
 Environment=NODE_ENV=production
 Environment=HOME=/var/lib/changyi-kb-standby
 Environment=CYJ_MCP_PROFILE=project-read
 Environment=CYJ_KB_ROOT=/var/lib/changyi-kb-standby/data
+Environment=CYJ_MCP_HOST=127.0.0.1
+Environment=CYJ_MCP_PORT=8794
 EnvironmentFile=-/etc/changyi-jiuan-mcp.env
-ExecStart=/usr/local/bin/node /opt/changyi-jiuan-mcp/app/dist/cli/qmd.js mcp --http --port 8794
+ExecStart=/usr/local/bin/node /opt/changyi-jiuan-mcp/current/dist/cli/project-mcp-http.js
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
