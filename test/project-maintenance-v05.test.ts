@@ -69,9 +69,12 @@ describe("0.5 maintenance security boundary", () => {
 
   test("requires the maintenance planner to replace explicitly outdated current-state text", async () => {
     const worker = await readFile(join(process.cwd(), "src/backends/python/cyj_maintenance_worker.py"), "utf8");
+    const config = await readFile(join(process.cwd(), "src/backends/python/cyj_maintenance_agent.yaml"), "utf8");
     expect(worker).toContain("current-state statement is outdated");
     expect(worker).toContain("preserve unrelated bullets verbatim");
     expect(worker).toContain("prioritize the project main file");
+    expect(worker).toContain("base_revisions.knowledge_revision");
+    expect(config).toContain("max_tokens: 3000");
   });
 
   test("uses SHA-256 over the exact resolution statement", () => {
