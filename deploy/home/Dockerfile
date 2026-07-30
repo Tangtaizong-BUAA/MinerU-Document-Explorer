@@ -12,6 +12,7 @@ RUN python3 -m pip install --no-cache-dir --no-deps --index-url "$PIP_INDEX_URL"
 
 FROM node:22-bookworm-slim
 
+ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
 ENV NODE_ENV=production \
     CYJ_MCP_HOST=0.0.0.0 \
     CYJ_MCP_PORT=8793 \
@@ -24,7 +25,8 @@ COPY package.json package-lock.json ./
 # better-sqlite3 normally uses a prebuilt binary. Keep the image reproducible
 # when that download is unavailable by compiling it, then remove the temporary
 # toolchain in the same layer so it is absent from the runtime image.
-RUN apt-get update \
+RUN sed -i "s#http://deb.debian.org/debian#$APT_MIRROR#g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends build-essential \
     && npm ci --omit=dev --no-audit --no-fund \
     && apt-get purge -y --auto-remove build-essential \
