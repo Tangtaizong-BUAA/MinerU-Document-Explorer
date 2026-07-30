@@ -47,6 +47,49 @@ async function initialize(server: LightweightProjectHttpHandle) {
 }
 
 describe("lightweight project-only HTTP MCP", () => {
+  test("maps anonymous sessions to project-contribute while preserving authenticated resolver access", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cyj-lightweight-anonymous-")); roots.push(root);
+    const server = await startLightweightProjectHttpServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectProfile: "project-contribute",
+      projectDataDir: root,
+      quiet: true,
+      allowUnauthenticated: true,
+      principalRegistryJson: JSON.stringify([
+        { token_sha256: tokenSha256("resolver-token"), principal_id: "owner", profile: "project-resolve", roles: ["project-owner"] },
+      ]),
+    });
+    servers.push(server);
+    const list = async (authorization?: string) => {
+      const headers: Record<string, string> = { "content-type": "application/json", accept: "application/json, text/event-stream" };
+      if (authorization) headers.authorization = authorization;
+      const initialized = await fetch(`http://127.0.0.1:${server.port}/mcp`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "anonymous-test", version: "1" } } }),
+      });
+      expect(initialized.status).toBe(200);
+      const session = initialized.headers.get("mcp-session-id");
+      expect(session).toBeTruthy();
+      const listed = await fetch(`http://127.0.0.1:${server.port}/mcp`, {
+        method: "POST",
+        headers: { ...headers, "mcp-session-id": session! },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+      });
+      expect(listed.status).toBe(200);
+      const body = await listed.json() as { result: { tools: Array<{ name: string }> } };
+      return body.result.tools.map(tool => tool.name);
+    };
+
+    const anonymousTools = await list();
+    expect(anonymousTools).toContain("kb_start_work");
+    expect(anonymousTools).toContain("kb_finish_work");
+    expect(anonymousTools).not.toContain("kb_submit_user_resolution");
+    expect(anonymousTools).not.toContain("kb_parse_artifact");
+    expect(await list("Bearer resolver-token")).toContain("kb_submit_user_resolution");
+  });
+
   test("binds tool capabilities to hashed individual principals", async () => {
     const root = await mkdtemp(join(tmpdir(), "cyj-lightweight-principals-")); roots.push(root);
     const server = await startLightweightProjectHttpServer({ host: "127.0.0.1", port: 0, projectProfile: "project-contribute", projectDataDir: root, quiet: true,

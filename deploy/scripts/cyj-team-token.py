@@ -94,7 +94,7 @@ def compose_apply() -> None:
     raise RuntimeError(f"MCP health check did not recover: {last_error}")
 
 
-def smoke_token(token: str) -> None:
+def smoke_token(token: str, expects_resolver: bool = False) -> None:
     body = json.dumps({
         "jsonrpc": "2.0",
         "id": 1,
@@ -118,9 +118,31 @@ def smoke_token(token: str) -> None:
     with urllib.request.urlopen(request, timeout=10) as response:
         if response.status != 200:
             raise RuntimeError(f"New token smoke test returned HTTP {response.status}")
+        if not expects_resolver:
+            return
+        session_id = response.headers.get("mcp-session-id")
+    if not session_id:
+        raise RuntimeError("Resolver token initialize response did not create an MCP session")
+    list_body = json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}).encode("utf-8")
+    list_request = urllib.request.Request(
+        MCP_URL,
+        data=list_body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "Mcp-Session-Id": session_id,
+        },
+    )
+    with urllib.request.urlopen(list_request, timeout=10) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    names = {tool.get("name") for tool in payload.get("result", {}).get("tools", [])}
+    if "kb_submit_user_resolution" not in names:
+        raise RuntimeError("Resolver token smoke test did not expose kb_submit_user_resolution")
 
 
-def commit_registry(registry: list[dict[str, object]], smoke: str | None = None) -> None:
+def commit_registry(registry: list[dict[str, object]], smoke: str | None = None, smoke_resolver: bool = False) -> None:
     old_env = ENV_FILE.read_bytes()
     old_registry = REGISTRY_FILE.read_bytes() if REGISTRY_FILE.exists() else None
     try:
@@ -128,7 +150,7 @@ def commit_registry(registry: list[dict[str, object]], smoke: str | None = None)
         update_env(registry)
         compose_apply()
         if smoke:
-            smoke_token(smoke)
+            smoke_token(smoke, expects_resolver=smoke_resolver)
     except Exception:
         atomic_write(ENV_FILE, old_env.decode("utf-8"), ENV_FILE.stat().st_mode & 0o777)
         if old_registry is None:
@@ -139,7 +161,7 @@ def commit_registry(registry: list[dict[str, object]], smoke: str | None = None)
         raise
 
 
-def issue_or_rotate(principal_id: str, rotate: bool) -> None:
+def issue_or_rotate(principal_id: str, rotate: bool, profile: str = "project-contribute", roles: list[str] | None = None) -> None:
     if not PRINCIPAL_RE.fullmatch(principal_id):
         raise SystemExit("principal_id must use 1-120 letters, digits, dot, underscore, colon, @, or hyphen")
     registry = load_registry()
@@ -147,17 +169,17 @@ def issue_or_rotate(principal_id: str, rotate: bool) -> None:
     if existing and not rotate:
         raise SystemExit(f"Principal already exists: {principal_id}; use rotate instead")
     token = secrets.token_urlsafe(32)
-    entry = {
+    entry: dict[str, object] = {
         "token_sha256": hashlib.sha256(token.encode("utf-8")).hexdigest(),
         "principal_id": principal_id,
-        "profile": "project-contribute",
-        "roles": [],
+        "profile": profile,
+        "roles": roles or [],
     }
     registry = [item for item in registry if item.get("principal_id") != principal_id]
     registry.append(entry)
     registry.sort(key=lambda item: str(item.get("principal_id", "")))
-    commit_registry(registry, smoke=token)
-    print(json.dumps({"principal_id": principal_id, "profile": "project-contribute", "token": token}, ensure_ascii=False))
+    commit_registry(registry, smoke=token, smoke_resolver=profile == "project-resolve")
+    print(json.dumps({"principal_id": principal_id, "profile": profile, "roles": roles or [], "token": token}, ensure_ascii=False))
 
 
 def revoke(principal_id: str) -> None:
@@ -183,13 +205,24 @@ def main() -> None:
     for command in ("issue", "rotate", "revoke"):
         child = subparsers.add_parser(command)
         child.add_argument("principal_id")
+    for command in ("issue-resolver", "rotate-resolver"):
+        child = subparsers.add_parser(command)
+        child.add_argument("principal_id")
+        child.add_argument("role", choices=("project-owner", "designated-resolver"))
     subparsers.add_parser("list")
     args = parser.parse_args()
     require_root()
     if args.command == "issue":
         issue_or_rotate(args.principal_id, rotate=False)
     elif args.command == "rotate":
-        issue_or_rotate(args.principal_id, rotate=True)
+        existing = next((entry for entry in load_registry() if entry.get("principal_id") == args.principal_id), None)
+        if existing is None:
+            raise SystemExit(f"Principal not found: {args.principal_id}")
+        issue_or_rotate(args.principal_id, rotate=True, profile=str(existing.get("profile", "project-contribute")), roles=list(existing.get("roles", [])))
+    elif args.command == "issue-resolver":
+        issue_or_rotate(args.principal_id, rotate=False, profile="project-resolve", roles=[args.role])
+    elif args.command == "rotate-resolver":
+        issue_or_rotate(args.principal_id, rotate=True, profile="project-resolve", roles=[args.role])
     elif args.command == "revoke":
         revoke(args.principal_id)
     else:

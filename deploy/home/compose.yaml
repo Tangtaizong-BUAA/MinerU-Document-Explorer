@@ -8,6 +8,9 @@ services:
       - /etc/changyi-jiuan-mcp.env
     environment:
       CYJ_MCP_PROFILE: project-contribute
+      # Ordinary project read/contribute sessions are intentionally anonymous.
+      # A supplied registered resolver Token still selects project-resolve.
+      CYJ_MCP_ALLOW_UNAUTHENTICATED: "true"
       CYJ_KB_ROOT: /data
       CYJ_MCP_HOST: 0.0.0.0
       CYJ_MCP_PORT: "8793"

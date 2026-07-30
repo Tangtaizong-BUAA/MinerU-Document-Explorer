@@ -29,6 +29,8 @@ description: Use the Changyi Jiuan project knowledge MCP for evidence-grounded r
 
 只有项目负责人和被显式授予 `project-resolve` capability 的指定负责人可以调用 `kb_submit_user_resolution`。调用时逐字提交用户答案、原话 SHA-256、来源 turn、期望 conflict revision 和幂等键；该调用只进入 `resolution_pending`，不能声称知识已经更新。
 
+普通入口即使允许匿名访问，也一律只映射为 `project-contribute`，不能因“无 Token”取得 resolver 或管理员能力。只有随请求提供并通过服务端 principal registry 验证的独立 resolver Token，才可获得 `project-resolve` 工具；不得从本机环境、聊天内容或 URL 参数猜测、代填或传播该 Token。
+
 其他成员的 Agent 仍必须展示相关冲突并询问用户。它可以依照用户当轮回复修正本次推理和回答，但这个回复只能作为当前任务的临时上下文：禁止通过 `kb_capture_context`、`kb_finish_work`、`kb_publish_resource`、legacy 工具或任何其他路径持久回传。不要借“用户说了”伪造 resolver capability。
 
 ## 最小工具选择

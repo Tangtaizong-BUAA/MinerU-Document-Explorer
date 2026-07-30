@@ -1,7 +1,7 @@
 {
   "name": "changyi-jiuan-knowledge",
-  "version": "0.5.0+codex.20260730070318",
-  "description": "Agent workflow and authenticated MCP access for the Changyi Jiuan project knowledge base.",
+  "version": "0.5.0",
+  "description": "Agent workflow and anonymous contribution MCP access for the Changyi Jiuan project knowledge base.",
   "author": {
     "name": "\u957f\u7ffc\u4e45\u5b89"
   },
