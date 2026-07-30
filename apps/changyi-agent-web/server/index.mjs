@@ -24,6 +24,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const MAX_SESSIONS = 120;
+const MCP_PROTOCOL_VERSION = "2025-06-18";
 const MODEL_ROUTES = {
   auto: () => process.env.CYJ_AGENT_MODEL_FLASH || process.env.CYJ_AGENT_MODEL || "qwen3.7-flash",
   "fable-5": () => process.env.CYJ_AGENT_MODEL_MAX || "qwen3.8-max-preview",
@@ -203,6 +204,34 @@ async function openMcpClient() {
     version: "0.5.3",
     onUncaughtError: (error) => console.error("MCP uncaught error:", safeError(error)),
   });
+}
+
+function mcpRequestHeaders(sessionId) {
+  const headers = { "Content-Type": "application/json", Accept: "application/json, text/event-stream" };
+  if (process.env.CYJ_MCP_BEARER_TOKEN) headers.Authorization = `Bearer ${process.env.CYJ_MCP_BEARER_TOKEN}`;
+  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+  return headers;
+}
+
+async function callMcpToolDirect(name, args) {
+  const initialize = await fetch(MCP_URL, {
+    method: "POST",
+    headers: mcpRequestHeaders(),
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "changyi-jiuan-web-upload", version: "0.5.3" } } }),
+  });
+  const initialized = await initialize.json().catch(() => ({}));
+  const sessionId = initialize.headers.get("mcp-session-id");
+  if (!initialize.ok || initialized.error || !sessionId) throw new Error(initialized.error?.message || "知识库连接初始化失败");
+  const response = await fetch(MCP_URL, {
+    method: "POST",
+    headers: mcpRequestHeaders(sessionId),
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args } }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.error) throw new Error(payload.error?.message || "知识库工具调用失败");
+  const result = payload.result;
+  if (!result || result.isError) throw new Error(toolText(result) || "知识库未完成文件处理");
+  return result;
 }
 
 function createProvider(modelId) {
@@ -430,7 +459,6 @@ async function handleArtifactDownload(req, res, token) {
 }
 
 async function handleUpload(req, res) {
-  let client;
   try {
     const rawName = decodeURIComponent(String(req.headers["x-file-name"] || "项目文件"));
     const mimeType = uploadMimeType(rawName, req.headers["content-type"]);
@@ -438,22 +466,17 @@ async function handleUpload(req, res) {
     if (!ALLOWED_UPLOAD_MIME_TYPES.has(mimeType)) throw Object.assign(new Error("暂不支持这种文件格式"), { status: 415 });
     const bytes = await readBinaryBody(req);
     if (DEMO_MODE) return sendJson(res, 200, { attachment: { artifactId: `artifact:demo:${Date.now()}`, name: filename, mimeType, size: bytes.length } });
-    client = await openMcpClient();
-    const started = await client.callTool({ name: "kb_start_work", arguments: { project_id: PROJECT_ID, objective: `接收并持久化用户上传文件：${filename}`, expected_outputs: [filename], acceptance_criteria: ["文件原件已进入项目知识库并保留来源"] } });
-    if (started.isError) throw new Error(toolText(started) || "知识库未能建立文件接收任务");
+    const started = await callMcpToolDirect("kb_start_work", { project_id: PROJECT_ID, objective: `接收并持久化用户上传文件：${filename}`, expected_outputs: [filename], acceptance_criteria: ["文件原件已进入项目知识库并保留来源"] });
     const workId = toolWorkId(started);
     if (!workId) throw new Error("知识库未能建立文件接收任务");
-    const published = await client.callTool({ name: "kb_publish_resource", arguments: { work_id: workId, resource: { title: filename, filename, content_type: mimeType, encoding: "base64", content: bytes.toString("base64"), kind: mimeType.startsWith("image/") ? "image" : "document", source_refs: [`web-upload:${String(req.headers["x-session-id"] || "anonymous")}`], confidentiality: "internal" } }, options: { timeout: 120_000 } });
-    if (published.isError) throw new Error(toolText(published) || "知识库未能保存文件");
+    const published = await callMcpToolDirect("kb_publish_resource", { work_id: workId, resource: { title: filename, filename, content_type: mimeType, encoding: "base64", content: bytes.toString("base64"), kind: mimeType.startsWith("image/") ? "image" : "document", source_refs: [`web-upload:${String(req.headers["x-session-id"] || "anonymous")}`], confidentiality: "internal" } });
     const artifactId = toolArtifactId(published);
     if (!artifactId) throw new Error("知识库未返回文件标识");
     const publishedOutput = toolStructuredOutput(published);
-    await client.callTool({ name: "kb_finish_work", arguments: { work_id: workId, outcome: "completed", summary: `用户上传文件 ${filename} 已持久化`, result_hash: `upload-${publishedOutput?.sha256 || artifactId}`, artifacts: [artifactId], evidence_refs: [artifactId] } });
+    await callMcpToolDirect("kb_finish_work", { work_id: workId, outcome: "completed", summary: `用户上传文件 ${filename} 已持久化`, result_hash: `upload-${publishedOutput?.sha256 || artifactId}`, artifacts: [artifactId], evidence_refs: [artifactId] });
     return sendJson(res, 200, { attachment: { artifactId, name: filename, mimeType, size: bytes.length } });
   } catch (error) {
     return sendJson(res, error.status || 400, { error: safeError(error) });
-  } finally {
-    await client?.close().catch(() => {});
   }
 }
 
