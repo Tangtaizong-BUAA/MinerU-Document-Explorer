@@ -12,7 +12,7 @@ RUN python3 -m pip install --no-cache-dir --no-deps --index-url "$PIP_INDEX_URL"
 
 FROM node:22-bookworm-slim
 
-ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
+ARG APT_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian
 ENV NODE_ENV=production \
     CYJ_MCP_HOST=0.0.0.0 \
     CYJ_MCP_PORT=8793 \
