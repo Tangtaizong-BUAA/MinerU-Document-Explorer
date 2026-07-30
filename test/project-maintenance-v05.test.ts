@@ -102,6 +102,28 @@ describe("0.5 maintenance security boundary", () => {
     expect(body).toContain("## Durable boundary\n\nKeep this text.");
   });
 
+  test("refreshes queued packets against the latest revision before planning", async () => {
+    const data = await root(); const runtime = new ProjectRuntime(data); await runtime.initialize();
+    await runtime.bootstrapProject({ project_id: "project:cyj", title: "Project", mission: "Maintain grounded project knowledge", actor: "ops" });
+    const started = await runtime.startWork({ project_id: "project:cyj", objective: "Seed runtime status", expected_outputs: ["main"], acceptance_criteria: ["stable heading"], actor: "ops" });
+    const firstBrief = await runtime.brief("project:cyj") as { main_file: { revision_hash: string } };
+    const first = await runtime.updateProjectMain({ project_id: "project:cyj", work_id: started.work_id, expected_revision: firstBrief.main_file.revision_hash, change_summary: "Seed status", actor: "ops", markdown: "# Project\n\n## Runtime status\n\nOld status.\n" });
+    const oldPointer = (await runtime.revisionStore.pointer())!;
+    const input = packet();
+    input.base_revisions = { knowledge_revision: oldPointer.knowledge_revision, topology_revision: oldPointer.topology_revision, index_revision: oldPointer.index_revision };
+    input.text_context = `Update Runtime status.\n\n## Mutable document block\ntarget_ref: project:cyj\nexpected_revision: ${first.revision_hash}\nblock_key: heading:Runtime status\nprevious_block_hash: ${createHash("sha256").update("Old status.").digest("hex")}\n\nOld status.`;
+    const second = await runtime.updateProjectMain({ project_id: "project:cyj", work_id: started.work_id, expected_revision: first.revision_hash, change_summary: "Concurrent status update", actor: "ops", markdown: "# Project\n\n## Runtime status\n\nCurrent status.\n" });
+
+    const refreshed = await runtime.refreshMaintenancePacket(input);
+    const currentPointer = (await runtime.revisionStore.pointer())!;
+    expect(refreshed.base_revisions.knowledge_revision).toBe(currentPointer.knowledge_revision);
+    expect(refreshed.base_revisions.knowledge_revision).not.toBe(oldPointer.knowledge_revision);
+    expect(refreshed.text_context).toContain(`expected_revision: ${second.revision_hash}`);
+    expect(refreshed.text_context).toContain(createHash("sha256").update("Current status.").digest("hex"));
+    expect(refreshed.text_context).toContain("Current status.");
+    expect(refreshed.text_context).not.toContain("Old status.");
+  });
+
   test("locks and applies an authorized conflict resolution without model-side arbitration", async () => {
     const data = await root(); const runtime = new ProjectRuntime(data); await runtime.initialize();
     await runtime.bootstrapProject({ project_id: "project:cyj", title: "Project", mission: "Maintain grounded project knowledge", actor: "ops" });

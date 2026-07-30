@@ -1096,6 +1096,59 @@ export class ProjectRuntime {
     return { status: "queued", change_packet_id: packetId, current_revision: pointer?.knowledge_revision ?? "legacy", migration_required: true, deprecation: "0.5 canonical maintenance is asynchronous; this legacy call created a proposal only" };
   }
 
+  async refreshMaintenancePacket(packet: ChangePacket): Promise<ChangePacket> {
+    const pointer = await this.revisionStore.pointer();
+    const items = await this.records();
+    const mutableMarker = "\n\n## Mutable document block\ntarget_ref:";
+    const markerIndex = packet.text_context.indexOf(mutableMarker);
+    const stableContext = (markerIndex >= 0 ? packet.text_context.slice(0, markerIndex) : packet.text_context).trim();
+    const routingText = stableContext.toLowerCase();
+    const documentParts: string[] = [];
+    const headingCandidates: Array<{ score: number; text: string }> = [];
+    const documentCandidates = items.filter(item => item.record.id === packet.project_id || packet.candidate_section_refs.includes(item.record.id));
+    for (const item of documentCandidates) {
+      const lines = item.body.split("\n");
+      const headings = lines.map((line, index) => {
+        const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+        return match ? { index, level: match[1]!.length, title: match[2]! } : null;
+      }).filter((value): value is { index: number; level: number; title: string } => value !== null);
+      for (let index = 0; index < headings.length; index += 1) {
+        const heading = headings[index]!;
+        const next = headings.slice(index + 1).find(candidate => candidate.level <= heading.level);
+        const content = lines.slice(heading.index + 1, next?.index ?? lines.length).join("\n").trim();
+        if (!content || content.length > 2_500) continue;
+        const title = heading.title.toLowerCase();
+        let score = routingText.includes(title) ? 20 : 0;
+        for (let offset = 0; offset + 1 < title.length; offset += 1) if (routingText.includes(title.slice(offset, offset + 2))) score += 2;
+        if (score === 0) continue;
+        const expectedRevision = item.record.id === packet.project_id
+          ? String(item.record.main_revision ?? digest(item.body))
+          : String(item.record.revision_hash ?? digest(item.body));
+        headingCandidates.push({ score, text: `## Mutable document block\ntarget_ref: ${item.record.id}\nexpected_revision: ${expectedRevision}\nblock_key: heading:${heading.title}\nprevious_block_hash: ${digest(content)}\n\n${content}` });
+      }
+    }
+    let documentChars = 0;
+    for (const candidate of headingCandidates.sort((a, b) => b.score - a.score).slice(0, 4)) {
+      if (documentChars + candidate.text.length > 3_000) continue;
+      documentParts.push(candidate.text);
+      documentChars += candidate.text.length;
+    }
+    const openConflictRefs = items
+      .filter(item => item.record.project_id === packet.project_id && (item.record.type === "conflict" || item.record.type === "conflict_record") && (item.record.status === "open" || item.record.status === "resolution_pending"))
+      .map(item => item.record.id)
+      .slice(0, 30);
+    return {
+      ...packet,
+      base_revisions: {
+        knowledge_revision: pointer?.knowledge_revision ?? "legacy",
+        topology_revision: pointer?.topology_revision ?? "legacy",
+        index_revision: pointer?.index_revision ?? "unbuilt",
+      },
+      open_conflict_refs: openConflictRefs,
+      text_context: [stableContext, ...documentParts].filter(Boolean).join("\n\n").slice(0, 6_000),
+    };
+  }
+
   async applyMaintenancePlan(packet: ChangePacket, plan: MaintenancePlan, actor = "maintenance-harness"): Promise<{ knowledge_revision: string; changed_records: string[] }> {
     const pointer = await this.revisionStore.pointer();
     if ((pointer?.knowledge_revision ?? "legacy") !== plan.base_knowledge_revision) throw new Error("Maintenance plan base revision is stale");

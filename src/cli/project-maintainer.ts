@@ -24,8 +24,23 @@ do {
     continue;
   }
   try {
-    const plan = await adapter.propose(job.packet);
-    await runtime.applyMaintenancePlan(job.packet, plan, owner);
+    let applied = false;
+    let lastError: unknown;
+    for (let replan = 0; replan < 3; replan += 1) {
+      const packet = await runtime.refreshMaintenancePacket(job.packet);
+      try {
+        const plan = await adapter.propose(packet);
+        await runtime.applyMaintenancePlan(packet, plan, owner);
+        applied = true;
+        break;
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/base revision is stale|document revision conflict/i.test(message) || replan === 2) throw error;
+        console.warn(`Maintenance packet ${job.packet.packet_id} will replan against the latest revision (${replan + 1}/2)`);
+      }
+    }
+    if (!applied) throw lastError ?? new Error("Maintenance packet was not applied");
     await runtime.maintenanceQueue.complete(job.packet.packet_id, owner);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
