@@ -52,6 +52,22 @@ def _offline_plan(packet: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _fail_closed_no_change(packet: dict[str, Any], reason: str) -> dict[str, Any]:
+    return {
+        "schema": "cyj-maintenance-plan/v1",
+        "packet_id": packet["packet_id"],
+        "base_knowledge_revision": packet["base_revisions"]["knowledge_revision"],
+        "expected_topology_revision": packet["base_revisions"]["topology_revision"],
+        "prompt_version": PROMPT_VERSION,
+        "tool_schema_version": TOOL_SCHEMA_VERSION,
+        "operations": [{"op": "no_change", "reason": reason}],
+        "native_video_evidence_ids": [
+            item["evidence_id"] for item in packet.get("media", [])
+            if item.get("modality") == "video" and item.get("native_video_required")
+        ],
+    }
+
+
 def _extract_json(value: Any) -> dict[str, Any]:
     if isinstance(value, list):
         value = "".join(str(item.get("text", "")) if isinstance(item, dict) else str(item) for item in value)
@@ -83,6 +99,7 @@ def _content(packet: dict[str, Any]) -> list[dict[str, Any]]:
             "Do not call a read tool when text_context already contains the required evidence; prefer one final submit_maintenance_plan or finish_no_change call.",
             "Never emit patch_main or patch_section unless the packet includes the exact target revision, previous block hash, and complete replaceable block content.",
             "Keep the complete maintenance plan below 1200 output tokens.",
+            "If no evidence-backed write or conflict operation is possible, call finish_no_change immediately; never return prose or a partial plan.",
         ],
         "packet": {key: value for key, value in packet.items() if key != "media"},
     }
@@ -159,7 +176,15 @@ async def _live_plan(packet: dict[str, Any], options: dict[str, Any]) -> dict[st
     if completion_tokens > packet["budget"]["max_cumulative_output_tokens"]:
         raise RuntimeError("maintenance cumulative output token budget exceeded")
     proposed = submitted_plan()
-    return proposed if proposed is not None else _extract_json(result[-1].content)
+    if proposed is None:
+        try:
+            proposed = _extract_json(result[-1].content)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return _fail_closed_no_change(packet, "model did not submit a terminal maintenance plan")
+    required = {"schema", "packet_id", "base_knowledge_revision", "expected_topology_revision", "prompt_version", "tool_schema_version", "operations"}
+    if not isinstance(proposed, dict) or not required.issubset(proposed):
+        return _fail_closed_no_change(packet, "model returned an incomplete maintenance plan")
+    return proposed
 
 
 async def _handle(request: dict[str, Any]) -> dict[str, Any]:
