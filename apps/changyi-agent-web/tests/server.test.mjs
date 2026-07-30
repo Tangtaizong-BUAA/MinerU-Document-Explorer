@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 process.env.CYJ_AGENT_DEMO_MODE = "1";
-const { createAppServer, deepFindArtifacts, redactInternalNames, selectedModel, toolArtifactId, uploadMimeType } = await import("../server/index.mjs");
+const { createAppServer, deepFindArtifacts, redactInternalNames, selectedModel, shouldEmitArtifactCards, toolArtifactId, uploadMimeType } = await import("../server/index.mjs");
 
 async function withServer(run) {
   const server = createAppServer();
@@ -67,6 +67,15 @@ test("published artifact card keeps the requested title and filename", () => {
   );
   assert.equal(artifact.title, "线上 Agent 部署验收摘要");
   assert.equal(artifact.filename, "线上Agent部署验收摘要.md");
+});
+
+test("only newly published or promoted files become output cards", () => {
+  for (const tool of ["kb_read", "kb_view", "kb_search", "kb_graph_context", "read_session_attachment"]) {
+    assert.equal(shouldEmitArtifactCards(tool), false, `${tool} must stay evidence-only`);
+  }
+  for (const tool of ["kb_publish_resource", "kb_finish_work", "create_docx", "create_pptx", "create_xlsx", "publish_text_file", "promote_session_attachment"]) {
+    assert.equal(shouldEmitArtifactCards(tool), true, `${tool} must expose new deliverables`);
+  }
 });
 
 test("upload accepts structured and text-only MCP publish responses", () => {

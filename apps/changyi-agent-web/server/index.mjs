@@ -93,6 +93,16 @@ const TOOL_STATUS = {
   web_search: ["search", "正在联网检索公开信息"],
 };
 
+const ARTIFACT_OUTPUT_TOOLS = new Set([
+  "kb_publish_resource",
+  "kb_finish_work",
+  "create_docx",
+  "create_pptx",
+  "create_xlsx",
+  "publish_text_file",
+  "promote_session_attachment",
+]);
+
 const sessions = new Map();
 const attachmentStore = new SessionAttachmentStore();
 
@@ -320,6 +330,10 @@ export function deepFindArtifacts(value, toolInput = {}) {
   return results;
 }
 
+export function shouldEmitArtifactCards(toolName) {
+  return ARTIFACT_OUTPUT_TOOLS.has(String(toolName || ""));
+}
+
 function filenameFromTitle(title, mimeType) {
   const extension = ({
     "text/markdown": ".md",
@@ -510,7 +524,7 @@ async function handleChat(req, res) {
             outputBuffer = outputBuffer.slice(cut);
           }
         }
-        if (event.type === "tool_execution_end" && !event.isError) {
+        if (event.type === "tool_execution_end" && !event.isError && shouldEmitArtifactCards(event.toolName)) {
           for (const artifact of deepFindArtifacts(event.result?.details?.output || event.result, event.args || {})) {
             if (emittedArtifacts.has(artifact.id)) continue;
             emittedArtifacts.add(artifact.id);
