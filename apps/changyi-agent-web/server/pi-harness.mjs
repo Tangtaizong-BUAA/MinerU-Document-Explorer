@@ -54,6 +54,7 @@ export function createPiModel(modelId) {
     maxTokens: 8_192,
     compat: {
       thinkingFormat: "qwen",
+      supportsDeveloperRole: false,
       supportsReasoningEffort: false,
       supportsStrictMode: false,
       supportsUsageInStreaming: true,

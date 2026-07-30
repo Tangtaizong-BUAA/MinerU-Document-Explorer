@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fauxAssistantMessage, registerFauxProvider } from "@mariozechner/pi-ai";
-import { createSessionAttachmentTools, runPiAgent } from "../server/pi-harness.mjs";
+import { createPiModel, createSessionAttachmentTools, runPiAgent } from "../server/pi-harness.mjs";
+
+test("DashScope compatibility keeps the system prompt in the supported system role", () => {
+  assert.equal(createPiModel("qwen3.7-flash").compat.supportsDeveloperRole, false);
+});
 
 test("Pi harness streams answer deltas and retains session messages", async () => {
   const faux = registerFauxProvider({ api: "cyj-faux", provider: "cyj-test", tokensPerSecond: 10000 });
