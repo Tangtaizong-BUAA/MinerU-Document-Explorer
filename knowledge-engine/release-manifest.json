@@ -1,0 +1,398 @@
+{
+  "schema": "knowledge-engine-export/v1",
+  "version": "0.8.2",
+  "kernel_files": [
+    "src/cli/knowledge.ts",
+    "src/mcp/project-http-server.ts",
+    "src/project/client-skill.ts",
+    "src/project/client-notices.ts",
+    "src/project/client-skill-bundle.generated.ts",
+    "src/project/runtime.ts",
+    "src/project/validation.ts",
+    "src/project/views.ts",
+    "src/project/ingestion.ts",
+    "src/project/revision-store.ts",
+    "src/project/maintenance/queue.ts",
+    "src/project/maintenance/contracts.ts",
+    "src/project/retrieval/evidence.ts",
+    "src/project/retrieval/types.ts",
+    "src/project/retrieval/index.ts",
+    "src/project/retrieval/qwen-provider.ts",
+    "src/project/multimodal/alibaba-client.ts",
+    "src/project/retrieval/planner.ts",
+    "src/project/retrieval/normalize.ts",
+    "src/project/retrieval/preview.ts",
+    "src/doc-reading-config.ts",
+    "src/backends/python-utils.ts",
+    "src/backends/python-types.ts",
+    "src/project/principals.ts",
+    "src/mcp/project-versioning.ts",
+    "src/mcp/project-client-guidance.ts",
+    "src/mcp/project-resource.ts",
+    "src/mcp/chatgpt-read-tools.ts",
+    "src/mcp/tools/project.ts",
+    "src/project/runner-import.ts",
+    "src/project/retrieval/reading.ts",
+    "src/project/retrieval/backfill.ts",
+    "src/project/deployment/config.ts",
+    "src/project/deployment/maintenance.ts",
+    "src/project/maintenance/jev-maintenance.ts",
+    "src/project/maintenance/jev-provider.ts",
+    "src/project/maintenance/jev-routing.ts",
+    "src/project/maintenance/ms-agent-adapter.ts",
+    "src/project/deployment/client.ts"
+  ],
+  "source_files": [
+    {
+      "source": "src/cli/knowledge.ts",
+      "target": "src/cli/knowledge.ts",
+      "sha256": "22ac618ad25b74e58ab6e5572ad152accd471a4cb25dc191f83b5ad9d7c4b78e"
+    },
+    {
+      "source": "src/mcp/project-http-server.ts",
+      "target": "src/mcp/project-http-server.ts",
+      "sha256": "bc69ef98a1a66e5054af97b3dcd2c35b6ded681aaa4ffed0855c77daa95ee0b0"
+    },
+    {
+      "source": "src/project/client-skill.ts",
+      "target": "src/project/client-skill.ts",
+      "sha256": "57c4592fbbb60002fc83d6dc85faea6500c05e8561fac5438e452eebfbe234be"
+    },
+    {
+      "source": "src/project/client-notices.ts",
+      "target": "src/project/client-notices.ts",
+      "sha256": "81e95f9091878de6e52dc7a3acb5cd27312c7ce8db1206c301376d242b11337b"
+    },
+    {
+      "source": "src/project/runtime.ts",
+      "target": "src/project/runtime.ts",
+      "sha256": "f0f1c3ed464829691021aad556176a7a43adc0847899b017a767828e7300f3f1"
+    },
+    {
+      "source": "src/project/validation.ts",
+      "target": "src/project/validation.ts",
+      "sha256": "19ae4de512e1dce10e3014b86254f4131dc10bbd0ba0a3d2e6a4945e794eecd1"
+    },
+    {
+      "source": "src/project/views.ts",
+      "target": "src/project/views.ts",
+      "sha256": "867cf0e7bc51328ebbb929f8406e0b3d130b0e4670415c406122d3c186a56610"
+    },
+    {
+      "source": "src/project/ingestion.ts",
+      "target": "src/project/ingestion.ts",
+      "sha256": "19886b7cad00039888fc70dfb5372f11963eaeb7ea517a64efd07b6b42d4a31d"
+    },
+    {
+      "source": "src/project/revision-store.ts",
+      "target": "src/project/revision-store.ts",
+      "sha256": "e6da8846eb604af2ae91eae7ceaebc9a43632bc268e05b7499e1c5d2a16f9fe5"
+    },
+    {
+      "source": "src/project/maintenance/queue.ts",
+      "target": "src/project/maintenance/queue.ts",
+      "sha256": "1b92b3edb06ae9818a5a0a7d2d49ea1d8fee85ec9823f7aca77fbb3cf87ead9a"
+    },
+    {
+      "source": "src/project/maintenance/contracts.ts",
+      "target": "src/project/maintenance/contracts.ts",
+      "sha256": "b3066033e954465e3e8c27d66c42a1ced0d49ae4613e072247ba73f1e6fa6506"
+    },
+    {
+      "source": "src/project/retrieval/evidence.ts",
+      "target": "src/project/retrieval/evidence.ts",
+      "sha256": "2446ef9517a26ef1cb634acc1ee5fa2651ff90275d0528add2aab27c10ad397e"
+    },
+    {
+      "source": "src/project/retrieval/types.ts",
+      "target": "src/project/retrieval/types.ts",
+      "sha256": "1795ae536a5499e5a0bd4842ec4c8b28f3a043facff90785d25e44403c7b8b65"
+    },
+    {
+      "source": "src/project/retrieval/index.ts",
+      "target": "src/project/retrieval/index.ts",
+      "sha256": "5794377c0749a52de3eec2ea1ee32af2c3652216b0ed6f6f5d957b6a5054bd2c"
+    },
+    {
+      "source": "src/project/retrieval/qwen-provider.ts",
+      "target": "src/project/retrieval/qwen-provider.ts",
+      "sha256": "8f464e2689918853ce1ebf0ba97e7dadbfb0995f1f6f185a72ef2be3832abc05"
+    },
+    {
+      "source": "src/project/multimodal/alibaba-client.ts",
+      "target": "src/project/multimodal/alibaba-client.ts",
+      "sha256": "187699c3af90ad573b9583cf6b3a2d386a489c5ea640d2c4598bd7644ea77cad"
+    },
+    {
+      "source": "src/project/retrieval/planner.ts",
+      "target": "src/project/retrieval/planner.ts",
+      "sha256": "32a6f1ee68184de88b52dbc945cf854510eb088e427194cfed3af535418cd719"
+    },
+    {
+      "source": "src/project/retrieval/normalize.ts",
+      "target": "src/project/retrieval/normalize.ts",
+      "sha256": "901f8c1dc79dc3a6c6195631a4969a1239446c00f2204656631ad2895159b40f"
+    },
+    {
+      "source": "src/project/retrieval/preview.ts",
+      "target": "src/project/retrieval/preview.ts",
+      "sha256": "0e08f23702b8fe0b4b2e8c29051f6c93d38e927aa28a3cb81238df5e436789f4"
+    },
+    {
+      "source": "src/doc-reading-config.ts",
+      "target": "src/doc-reading-config.ts",
+      "sha256": "6b68f72a8d982b2a5990ac427fd0a4720e120cfbfd982124c40725d36340ae69"
+    },
+    {
+      "source": "src/backends/python-utils.ts",
+      "target": "src/backends/python-utils.ts",
+      "sha256": "ec7256bc7caea6b6c586b4432f44ef037f30e06b8cd2d5e7c940ed7cf21f5294"
+    },
+    {
+      "source": "src/backends/python-types.ts",
+      "target": "src/backends/python-types.ts",
+      "sha256": "556085aeef8eb73f0563546dbab49db9e8e13cd7dae1ad21bb7b1dcdfb3f5b28"
+    },
+    {
+      "source": "src/project/principals.ts",
+      "target": "src/project/principals.ts",
+      "sha256": "93392ca80fd75211d7b298c1cadd86d07bf3c92361091748b5d9334c11c6823b"
+    },
+    {
+      "source": "src/mcp/project-versioning.ts",
+      "target": "src/mcp/project-versioning.ts",
+      "sha256": "a2fd7005d9c74e03fafc12c8108fb126bf91523875d2a443dee69000241a0fb4"
+    },
+    {
+      "source": "src/mcp/project-client-guidance.ts",
+      "target": "src/mcp/project-client-guidance.ts",
+      "sha256": "bf77f6a586c73e4717b85aa7c788feb22dd79b7558c1da3daa7265927bc1cfa2"
+    },
+    {
+      "source": "src/mcp/project-resource.ts",
+      "target": "src/mcp/project-resource.ts",
+      "sha256": "d89c2ea8996a96402e613d7e06af09edc97f90e3d68c9e0272966c783e274650"
+    },
+    {
+      "source": "src/mcp/chatgpt-read-tools.ts",
+      "target": "src/mcp/chatgpt-read-tools.ts",
+      "sha256": "d6f0f2ef9e0fb6d4af19746a7770ffae051cdb0e62878732e0fe7a8512b079e2"
+    },
+    {
+      "source": "src/mcp/tools/project.ts",
+      "target": "src/mcp/tools/project.ts",
+      "sha256": "43609a03337af4300ec764bc62b71a3632309004a1425a3e5c45b48b4e4456e7"
+    },
+    {
+      "source": "src/project/runner-import.ts",
+      "target": "src/project/runner-import.ts",
+      "sha256": "b9d1ccd78de66eb7b3bebe4d0ed7bf0c8660ae6e5036b4ec19cf883305d4848b"
+    },
+    {
+      "source": "src/project/retrieval/reading.ts",
+      "target": "src/project/retrieval/reading.ts",
+      "sha256": "cbfe9500c2d0ad696fd61bd885f08ebe5a8ab00bf71b8930cf1f4a6303de75c8"
+    },
+    {
+      "source": "src/project/retrieval/backfill.ts",
+      "target": "src/project/retrieval/backfill.ts",
+      "sha256": "5d23c897a3eb09887c8311b354db214a28354d3d3e9898315e9030d78c87d520"
+    },
+    {
+      "source": "src/project/deployment/config.ts",
+      "target": "src/project/deployment/config.ts",
+      "sha256": "066e448833d64716728dd36090af76a8ba2de59259a9a1d7f19cc733b1e917b0"
+    },
+    {
+      "source": "src/project/deployment/maintenance.ts",
+      "target": "src/project/deployment/maintenance.ts",
+      "sha256": "a793dab692dbc674088148ee443fb3c5db9163bd33f9b163f6bc2c5ee762ad51"
+    },
+    {
+      "source": "src/project/maintenance/jev-maintenance.ts",
+      "target": "src/project/maintenance/jev-maintenance.ts",
+      "sha256": "ccaa2f84d3dac282288cd500c256bb52e8f5467af3641a26071fa8495263b2b5"
+    },
+    {
+      "source": "src/project/maintenance/jev-provider.ts",
+      "target": "src/project/maintenance/jev-provider.ts",
+      "sha256": "8efaeee87147500f957737d0c0261335e36201c29d108d2386428a4ff49375d0"
+    },
+    {
+      "source": "src/project/maintenance/jev-routing.ts",
+      "target": "src/project/maintenance/jev-routing.ts",
+      "sha256": "d40f933c4cc888fc4becaa086c45681182b5b938547c9f08b9ffc3dc089d4b0c"
+    },
+    {
+      "source": "src/project/maintenance/ms-agent-adapter.ts",
+      "target": "src/project/maintenance/ms-agent-adapter.ts",
+      "sha256": "6d022a6f32e26bef32e4bebf0ba07423f773f3f0c36926589b8cde550b67f29e"
+    },
+    {
+      "source": "src/project/deployment/client.ts",
+      "target": "src/project/deployment/client.ts",
+      "sha256": "c786443bbce00de0bb3da9a6c71a82f3f703d3a2b6750c19d1652b47824cd401"
+    },
+    {
+      "source": "test/knowledge-deployment.test.ts",
+      "target": "test/knowledge-deployment.test.ts",
+      "sha256": "c05787db62a89cd9b6226cc4525f22dbcac2f1560346e583fd4bb891289acb8f"
+    },
+    {
+      "source": "test/project-jev-maintenance.test.ts",
+      "target": "test/project-jev-maintenance.test.ts",
+      "sha256": "06732722d61a903776629c8fba4472d61129dc467774b0807595f67cdb8d2167"
+    },
+    {
+      "source": "test/project-qwen-provider.test.ts",
+      "target": "test/project-qwen-provider.test.ts",
+      "sha256": "3b395e04ec299d48bde4c2410ca907851dabd4af9f28e8d9c0d8f95d9f08b6b3"
+    },
+    {
+      "source": "test/project-retrieval-index.test.ts",
+      "target": "test/project-retrieval-index.test.ts",
+      "sha256": "6daa5be22f769dbfce8c14c17666826c3b6592a97f3445694901fe8c6da10a44"
+    },
+    {
+      "source": "test/project-retrieval-reading.test.ts",
+      "target": "test/project-retrieval-reading.test.ts",
+      "sha256": "2585092bae0f13371a556c9c36861a752bec28c4a90fe9471dd50cc1737f0e0e"
+    },
+    {
+      "source": "test/project-retrieval-planner.test.ts",
+      "target": "test/project-retrieval-planner.test.ts",
+      "sha256": "d233f03614822303837085927679e0cebe05dbb046dd7076126faffffea48b54"
+    },
+    {
+      "source": "src/backends/python/extract_project_document.py",
+      "target": "src/backends/python/extract_project_document.py",
+      "sha256": "5b03ba615de128a91f914c9d8a7a92be7fb4122efb1613aa6ee4bfb7b2defbc1"
+    },
+    {
+      "source": "src/backends/python/preview_project_image.py",
+      "target": "src/backends/python/preview_project_image.py",
+      "sha256": "233b078215b7ffe9860bb92ae3e42b22094528e6bd1347d7b5821935768eb3ac"
+    },
+    {
+      "source": "src/backends/python/extract_pdf_mineru.py",
+      "target": "src/backends/python/extract_pdf_mineru.py",
+      "sha256": "aff94f3a6ca08bf6f38dc9288bc662f08cbfe5738cf3fd362e51b99ba072303d"
+    },
+    {
+      "source": "src/backends/python/cyj_maintenance_worker.py",
+      "target": "src/backends/python/cyj_maintenance_worker.py",
+      "sha256": "55e65564613ffda946bd4752664fa1088add982325d24a345ec0a4c6c907353d"
+    },
+    {
+      "source": "src/backends/python/cyj_maintenance_agent.yaml",
+      "target": "src/backends/python/cyj_maintenance_agent.yaml",
+      "sha256": "c8c237e810447b8b3c4c04c22a1cda82d651b1903fc2d801bbf8560861ee1b72"
+    },
+    {
+      "source": "src/backends/python/cyj_stop_after_plan.py",
+      "target": "src/backends/python/cyj_stop_after_plan.py",
+      "sha256": "599463fcca6a7676467131f007ee05f52dc3cd8a935861b27c726552af6e0bf4"
+    },
+    {
+      "source": "src/backends/python/tools/cyj_maintenance.py",
+      "target": "src/backends/python/tools/cyj_maintenance.py",
+      "sha256": "45baf63af6f2daa7e042407d2340450565bdd306b7cd5737d295ac0f0f9a817b"
+    },
+    {
+      "source": "skills/knowledge-engine/SKILL.md",
+      "target": "skills/knowledge-engine/SKILL.md",
+      "sha256": "3f5f49aa5c866be00b978e4fdb857c42e105f545d5baef82297c4a92d0648583"
+    },
+    {
+      "source": "skills/knowledge-engine/agents/openai.yaml",
+      "target": "skills/knowledge-engine/agents/openai.yaml",
+      "sha256": "7535d773c28b1b8d006d42ee29e4084f9ff2037ed79212b5f2bb789702591b56"
+    },
+    {
+      "source": "skills/knowledge-engine/references/workflow.md",
+      "target": "skills/knowledge-engine/references/workflow.md",
+      "sha256": "b6e57c33327eca881fff82c0d9fd459a876afe166db6eff19ce00b704601af14"
+    },
+    {
+      "source": "skills/knowledge-engine/scripts/client-device.mjs",
+      "target": "skills/knowledge-engine/scripts/client-device.mjs",
+      "sha256": "9fab32d9fb9bed6b21a4a7d17291966a86f89ea8f007d669d6aadc97a66afe33"
+    },
+    {
+      "source": "skills/knowledge-engine/scripts/device-core.mjs",
+      "target": "skills/knowledge-engine/scripts/device-core.mjs",
+      "sha256": "f2d72cc8879be176e8b44ea8748ecf7e9112394f405a95aca39c4b515abef92b"
+    },
+    {
+      "source": "deploy/knowledge-engine/Caddyfile",
+      "target": "deploy/Caddyfile",
+      "sha256": "3b48b529c7af4f06e84013c7c66a79d8fd66dc7994c8ae8f676af59c0346a9b2"
+    },
+    {
+      "source": "deploy/knowledge-engine/Dockerfile",
+      "target": "deploy/Dockerfile",
+      "sha256": "86cc77a3e93cb4073c57ce384d36e75971fc72f3a6dc7ca8ae9f5596facfbe7c"
+    },
+    {
+      "source": "deploy/knowledge-engine/README.md",
+      "target": "deploy/README.md",
+      "sha256": "74c4da90136bc89558e08e5d28040d9b345b44d2ac68df06e35c893fe804258d"
+    },
+    {
+      "source": "deploy/knowledge-engine/compose.cloud.yaml",
+      "target": "deploy/compose.cloud.yaml",
+      "sha256": "9da35d67be1a856e749e1b2cdacb5aba0497977c745ab57e275ab53568b26c12"
+    },
+    {
+      "source": "deploy/knowledge-engine/compose.local.yaml",
+      "target": "deploy/compose.local.yaml",
+      "sha256": "c2da917450ae75618e87e8f56b82050416c19558c07e09412de80594ac168d12"
+    },
+    {
+      "source": "deploy/knowledge-engine/providers.env.example",
+      "target": "deploy/providers.env.example",
+      "sha256": "075e5502b24e42d91c3bd2254199048821907d473faaca44e0a59c6c5d2bd6b8"
+    },
+    {
+      "source": "deploy/knowledge-engine/requirements.txt",
+      "target": "deploy/requirements.txt",
+      "sha256": "dedfce1d3d0c5c9ea69de49bfd4f8dcf902602c47886a88972460483f20a1a8c"
+    },
+    {
+      "source": "deploy/home/requirements.txt",
+      "target": "deploy/requirements.providers.txt",
+      "sha256": "79805f6679179469b8b8ba00ed4ec58efdbb0059f859fffd29ac0841d3f45b73"
+    },
+    {
+      "source": "docs/knowledge-engine-architecture.md",
+      "target": "docs/architecture.md",
+      "sha256": "6fa23ee93d7ee375398f6e761c43a14b16ca9d4436a094ab29a1f7630329949a"
+    },
+    {
+      "source": "deploy/knowledge-engine/README.md",
+      "target": "README.md",
+      "sha256": "74c4da90136bc89558e08e5d28040d9b345b44d2ac68df06e35c893fe804258d"
+    },
+    {
+      "source": "LICENSE",
+      "target": "LICENSE",
+      "sha256": "17bb04b8e3bfbfb77c151c49214c79bcdeac997c7642162e36e10eeb4f17c1de"
+    },
+    {
+      "source": "test/project-retrieval-backfill.test.ts",
+      "target": "test/project-retrieval-backfill.test.ts",
+      "sha256": "ed52641de7d57be393406a88dacbdf514ae7f789b4e31496d557df75b7f39783"
+    }
+  ],
+  "transformations": [
+    "Replace hosted Skill release adapter with deployment-only adapter; no hosted Skill or project corpus is exported."
+  ],
+  "exclusions": [
+    "project data",
+    "tokens and private invitations",
+    "production env and server routes",
+    "application user databases",
+    "unrelated apps",
+    "artifact reports"
+  ]
+}

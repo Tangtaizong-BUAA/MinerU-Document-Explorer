@@ -1,0 +1,30 @@
+name: Knowledge engine
+on:
+  push:
+    paths: ['knowledge-engine/**', '.github/workflows/knowledge-engine.yml']
+  pull_request:
+    paths: ['knowledge-engine/**', '.github/workflows/knowledge-engine.yml']
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: knowledge-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: knowledge-engine/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 -m pip install -r deploy/requirements.txt
+      - run: npm ci
+      - run: npm run build
+      - run: npm test

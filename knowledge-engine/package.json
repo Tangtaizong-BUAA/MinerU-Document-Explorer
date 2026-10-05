@@ -1,0 +1,45 @@
+{
+  "name": "@tangtaizong-buaa/knowledge-engine",
+  "version": "0.8.2",
+  "description": "Self-hosted structured and multimodal RAG knowledge engine with local and collaborative MCP modes",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "bin": {
+    "knowledge-mcp": "bin/knowledge-mcp"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "skills",
+    "deploy",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "release-manifest.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-python.mjs",
+    "test": "vitest run --config vitest.config.ts --reporter=verbose",
+    "start": "node dist/cli/knowledge.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tangtaizong-BUAA/MinerU-Document-Explorer.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "better-sqlite3": "12.9.0",
+    "yaml": "2.9.1",
+    "zod": "4.2.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3",
+    "tsx": "4.21.0",
+    "vitest": "4.1.11"
+  }
+}

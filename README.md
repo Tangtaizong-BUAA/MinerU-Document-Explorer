@@ -26,6 +26,19 @@
 
 ---
 
+## Personal and collaborative knowledge engine
+
+The shared structured and multimodal RAG architecture is available in [knowledge-engine/](knowledge-engine/README.md): personal local MCP (stdio or authenticated loopback HTTP) and collaborative cloud MCP (HTTPS with independent revocable members). Both use the same canonical documents, Qwen text/image retrieval, optional MinerU/Jev and asynchronous evidence-checked maintenance. The package contains no hosted project data or credentials.
+
+```sh
+cd knowledge-engine
+npm ci
+npm run build
+node bin/knowledge-mcp init local --dir ./my-kb
+# Or: init cloud --dir ./team-kb --public-url https://your-domain.example/mcp
+```
+
+
 ## 🤔 Why MinerU Document Explorer?
 
 MinerU Document Explorer equips your agent with three tool suites — **Retrieve, Deep Read, and Ingest** — closing the full knowledge loop:
