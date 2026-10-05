@@ -19,6 +19,9 @@ RUN python3 -m pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r /tmp/r
     && python3 -m pip install --no-cache-dir --index-url "$PIP_INDEX_URL" --no-deps ms-agent==1.6.0
 
 FROM node:22-bookworm-slim
+ARG APT_MIRROR=
+RUN if [ -n "$APT_MIRROR" ]; then sed -i "s|http://deb.debian.org/debian|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; fi \
+    && apt-get update && apt-get install -y --no-install-recommends libssl3 libsqlite3-0 ca-certificates && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production CYJ_PYTHON_BIN=/usr/local/bin/python3 CYJ_MAINTENANCE_PYTHON=/usr/local/bin/python3
 COPY --from=python-runtime /usr/local /usr/local
 WORKDIR /app
