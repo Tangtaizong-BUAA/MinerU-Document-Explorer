@@ -1,0 +1,4 @@
+interface:
+  display_name: "Knowledge engine"
+  short_description: "Retrieve evidence and contribute to your self-hosted knowledge base"
+  default_prompt: "Use the configured knowledge-engine MCP and this installation's deployment.json. Synchronize the Skill, read the project brief, retrieve and verify source evidence, then close out durable work."

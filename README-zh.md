@@ -26,6 +26,21 @@
 
 ---
 
+## 个人本机与多人云端知识库
+
+新增完整的[知识引擎](knowledge-engine/README.md)，共用结构化主文件与分文件、多模态 RAG、Qwen、可选 MinerU/Jev 和异步维护 Harness。个人模式支持本机 stdio 或认证 loopback HTTP；云端模式支持 HTTPS、独立成员令牌、上传协作与即时撤权。开源包不包含任何真实团队资料、令牌或生产配置。
+
+```sh
+cd knowledge-engine
+npm ci
+npm run build
+node bin/knowledge-mcp init local --dir ./my-kb
+# 云端：init cloud --dir ./team-kb --public-url https://your-domain.example/mcp
+```
+
+详细部署与架构见 [knowledge-engine/README.md](knowledge-engine/README.md) 和 [architecture](knowledge-engine/docs/architecture.md)。
+
+
 ## 🤔 为什么选择 MinerU Document Explorer？
 
 MinerU Document Explorer 为你的 Agent 提供三组工具套件 — **检索、精读、摄取** — 构成从索引到输出的完整知识闭环：
