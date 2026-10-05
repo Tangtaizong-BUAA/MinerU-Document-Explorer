@@ -22,7 +22,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-python.mjs",
-    "test": "vitest run test/ --reporter=verbose",
+    "test": "vitest run --config vitest.config.ts --reporter=verbose",
     "start": "node dist/cli/knowledge.js"
   },
   "repository": {
@@ -30,9 +30,9 @@
     "url": "https://github.com/Tangtaizong-BUAA/MinerU-Document-Explorer.git"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.25.1",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "better-sqlite3": "12.9.0",
-    "yaml": "2.8.2",
+    "yaml": "2.9.1",
     "zod": "4.2.1"
   },
   "devDependencies": {
@@ -40,6 +40,6 @@
     "@types/node": "24.10.1",
     "typescript": "5.9.3",
     "tsx": "4.21.0",
-    "vitest": "3.2.4"
+    "vitest": "4.1.11"
   }
 }

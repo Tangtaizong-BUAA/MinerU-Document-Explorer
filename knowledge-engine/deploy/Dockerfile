@@ -8,6 +8,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --registry "$NPM_REGISTRY" --no-audit --no-fund
 COPY tsconfig.json ./
 COPY src ./src
+COPY scripts ./scripts
+COPY bin ./bin
 RUN npm run build && npm prune --omit=dev --no-audit --no-fund
 
 FROM python:3.11-slim-bookworm AS python-runtime

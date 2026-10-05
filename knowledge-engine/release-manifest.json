@@ -331,7 +331,7 @@
     {
       "source": "deploy/knowledge-engine/Dockerfile",
       "target": "deploy/Dockerfile",
-      "sha256": "7a1fb0d109df68b2d04e6472cb7dd6bb1a4a5980160e3d6d17b95bb3bc0981aa"
+      "sha256": "9c2cfc970010e42d9da900825145f05288b7afd75d5869e2ab7bfc0c65b8d8dd"
     },
     {
       "source": "deploy/knowledge-engine/README.md",
